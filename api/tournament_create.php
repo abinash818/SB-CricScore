@@ -90,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['_action'] ?? '') === 'add_
   $names = $_POST['teams'] ?? [];
 
   if ($tid <= 0) {
-    header('Location: /api/tournament_create.php?err=' . urlencode('Invalid tournament ID'));
+    header('Location: tournament_create.php?err=' . urlencode('Invalid tournament ID'));
     exit;
   }
 
@@ -105,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['_action'] ?? '') === 'add_
   $clean = array_values(array_unique($clean));
 
   if (count($clean) < 2) {
-    header('Location: /api/tournament_create.php?id=' . $tid . '&err=' . urlencode('Please add at least 2 unique teams.'));
+    header('Location: tournament_create.php?id=' . $tid . '&err=' . urlencode('Please add at least 2 unique teams.'));
     exit;
   }
 
@@ -118,10 +118,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['_action'] ?? '') === 'add_
         $st->execute([$tid, $teamName, $short, 'shield']);
       } catch (Throwable $e) {}
     }
-    header('Location: /pages/tournament.php?id=' . $tid);
+    header('Location: ../pages/tournament.php?id=' . $tid);
     exit;
   } catch (Throwable $e) {
-    header('Location: /api/tournament_create.php?id=' . $tid . '&err=' . urlencode('Error adding teams: ' . $e->getMessage()));
+    header('Location: tournament_create.php?id=' . $tid . '&err=' . urlencode('Error adding teams: ' . $e->getMessage()));
     exit;
   }
 }
@@ -185,7 +185,7 @@ if ($id > 0) {
     <div class="card" style="max-width:640px; margin:0 auto;">
       <h2 style="margin-bottom:18px;">🏆 Create New Tournament</h2>
 
-      <form id="createForm" method="post" action="/api/tournament_create.php">
+      <form id="createForm" method="post" action="tournament_create.php">
         <label class="muted" style="font-size:12px; text-transform:uppercase; font-weight:700;">Tournament Name</label>
         <input name="name" placeholder="e.g. Astro Premier League 2026" required autofocus>
 
@@ -253,19 +253,19 @@ if ($id > 0) {
         box.style.display='none';
         const fd = new FormData(e.target);
         try {
-          const r = await fetch(e.target.action, { method:'POST', body:fd });
+          const r = await fetch(e.target.action || 'tournament_create.php', { method:'POST', body:fd });
           const text = await r.text();
           let data = null;
           try { data = JSON.parse(text); } catch(_) {}
           
           if(!r.ok){
             box.style.display='block';
-            box.textContent = (data && data.error) ? data.error : text;
+            box.textContent = (data && data.error) ? data.error : (r.status + ' Error: ' + (text.length > 100 ? text.substring(0, 100) + '...' : text));
             return;
           }
           const tid = extractId(data, text);
           if(!tid) throw new Error('Could not retrieve tournament ID');
-          location.href = '/api/tournament_create.php?id=' + tid;
+          location.href = 'tournament_create.php?id=' + tid;
         } catch(err){
           box.style.display='block';
           box.textContent = 'Error: ' + err.message;
