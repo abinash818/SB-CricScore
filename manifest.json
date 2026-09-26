@@ -1,0 +1,21 @@
+{
+  "name": "SB CricScore LIVE",
+  "short_name": "SB CricScore",
+  "start_url": "index.php",
+  "display": "standalone",
+  "background_color": "#070710",
+  "theme_color": "#070710",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
