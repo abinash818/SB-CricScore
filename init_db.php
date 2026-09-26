@@ -258,6 +258,28 @@ if ($driver === 'sqlite') {
       INDEX idx_comm_trigger (trigger_event)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     ");
+
+    // Auto-upgrade existing MySQL columns if missing
+    try {
+        $tCols = $pdo->query("SHOW COLUMNS FROM teams")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('group_name', $tCols)) $pdo->exec("ALTER TABLE teams ADD COLUMN group_name VARCHAR(50) DEFAULT NULL");
+        if (!in_array('short_name', $tCols)) $pdo->exec("ALTER TABLE teams ADD COLUMN short_name VARCHAR(10) DEFAULT NULL");
+        if (!in_array('icon', $tCols)) $pdo->exec("ALTER TABLE teams ADD COLUMN icon VARCHAR(50) DEFAULT 'shield'");
+
+        $pCols = $pdo->query("SHOW COLUMNS FROM players")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('mobile', $pCols)) $pdo->exec("ALTER TABLE players ADD COLUMN mobile VARCHAR(30) DEFAULT ''");
+        if (!in_array('dob', $pCols)) $pdo->exec("ALTER TABLE players ADD COLUMN dob VARCHAR(30) DEFAULT ''");
+        if (!in_array('tob', $pCols)) $pdo->exec("ALTER TABLE players ADD COLUMN tob VARCHAR(20) DEFAULT ''");
+        if (!in_array('pob', $pCols)) $pdo->exec("ALTER TABLE players ADD COLUMN pob VARCHAR(100) DEFAULT ''");
+        if (!in_array('batting_style', $pCols)) $pdo->exec("ALTER TABLE players ADD COLUMN batting_style VARCHAR(50) DEFAULT 'Right Hand Bat'");
+        if (!in_array('bowling_style', $pCols)) $pdo->exec("ALTER TABLE players ADD COLUMN bowling_style VARCHAR(50) DEFAULT 'Right Arm Medium'");
+        if (!in_array('profile_pic', $pCols)) $pdo->exec("ALTER TABLE players ADD COLUMN profile_pic VARCHAR(255) DEFAULT NULL");
+        if (!in_array('is_captain', $pCols)) $pdo->exec("ALTER TABLE players ADD COLUMN is_captain TINYINT(1) DEFAULT 0");
+
+        $mCols = $pdo->query("SHOW COLUMNS FROM matches")->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('is_final', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN is_final TINYINT(1) DEFAULT 0");
+        if (!in_array('man_of_match_id', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN man_of_match_id INT DEFAULT NULL");
+    } catch (Exception $e) {}
 }
 
 // Admin user setup
