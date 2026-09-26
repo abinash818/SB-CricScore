@@ -8,6 +8,7 @@ header('Content-Type: application/json');
 $tid = (int)($_POST['tournament_id'] ?? 0);
 $action = $_POST['action'] ?? 'add';
 $cloneSourceTeamId = (int)($_POST['clone_source_team_id'] ?? 0);
+$groupName = trim($_POST['group_name'] ?? '');
 
 if ($tid <= 0) {
     http_response_code(400);
@@ -36,9 +37,11 @@ if ($action === 'clone' && $cloneSourceTeamId > 0) {
             exit;
         }
 
+        $targetGroup = !empty($groupName) ? $groupName : ($srcTeam['group_name'] ?? null);
+
         // Insert new team into target tournament
-        $insTeam = $pdo->prepare("INSERT INTO teams (tournament_id, name, short_name, icon) VALUES (?, ?, ?, ?)");
-        $insTeam->execute([$tid, $srcTeam['name'], $srcTeam['short_name'], $srcTeam['icon']]);
+        $insTeam = $pdo->prepare("INSERT INTO teams (tournament_id, name, short_name, icon, group_name) VALUES (?, ?, ?, ?, ?)");
+        $insTeam->execute([$tid, $srcTeam['name'], $srcTeam['short_name'], $srcTeam['icon'], $targetGroup]);
         $newTeamId = (int)$pdo->lastInsertId();
 
         // Copy all players from source team
@@ -99,10 +102,10 @@ if (empty($short)) {
 }
 
 try {
-    $stmt = $pdo->prepare("INSERT INTO teams (name, short_name, icon, tournament_id) VALUES (?, ?, ?, ?)");
-    $stmt->execute([$name, $short, $icon, $tid]);
+    $stmt = $pdo->prepare("INSERT INTO teams (name, short_name, icon, group_name, tournament_id) VALUES (?, ?, ?, ?, ?)");
+    $stmt->execute([$name, $short, $icon, ($groupName ?: null), $tid]);
     
-    $all = $pdo->prepare("SELECT * FROM teams WHERE tournament_id=? ORDER BY name");
+    $all = $pdo->prepare("SELECT * FROM teams WHERE tournament_id=? ORDER BY group_name ASC, name ASC");
     $all->execute([$tid]);
     
     echo json_encode(['ok' => true, 'teams' => $all->fetchAll(PDO::FETCH_ASSOC)]);
@@ -110,3 +113,4 @@ try {
     http_response_code(500);
     echo json_encode(['error' => $e->getMessage()]);
 }
+?>

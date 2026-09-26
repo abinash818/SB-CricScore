@@ -205,8 +205,19 @@ function get_detailed_data(PDO $pdo, int $innings_id, ?int $target_run_count = n
              $p_runs = 0; $p_balls = 0; // Reset partnership
         } 
         elseif ($b['extras_type']) {
-             $mainText = pick_commentary($c_lib, 'extra_'.strtolower($b['extras_type']), 'default', $b['id']);
-             if(!$mainText) $mainText = "Extra " . strtoupper($b['extras_type']);
+             $ext = strtolower($b['extras_type']);
+             if ($ext === 'nb' && $runs_bat > 0) {
+                 if ($runs_bat == 6) {
+                     $mainText = "NO BALL and SMASHED FOR SIX! 🚀 (7 runs)";
+                 } elseif ($runs_bat == 4) {
+                     $mainText = "NO BALL and CRACKED FOR FOUR! 🏏 (5 runs)";
+                 } else {
+                     $mainText = "NO BALL + $runs_bat run(s) taken!";
+                 }
+             } else {
+                 $mainText = pick_commentary($c_lib, 'extra_'.$ext, 'default', $b['id']);
+                 if(!$mainText) $mainText = "Extra " . strtoupper($b['extras_type']);
+             }
         } 
         else {
              $trigger = (string)$runs_bat;
@@ -218,13 +229,13 @@ function get_detailed_data(PDO $pdo, int $innings_id, ?int $target_run_count = n
 
              // Milestones
              if (isset($newScore)) {
-                if ($prevScore < 50 && $newScore >= 50) $subText .= "<br><b style='color:#ff9800;'>? " . pick_commentary($c_lib, 'milestone_50', 'default', $b['id']) . "</b>";
-                elseif ($prevScore < 100 && $newScore >= 100) $subText .= "<br><b style='color:#e91e63;'>? " . pick_commentary($c_lib, 'milestone_100', 'default', $b['id']) . "</b>";
+                if ($prevScore < 50 && $newScore >= 50) $subText .= "<br><b style='color:#ff9800;'>🌟 " . pick_commentary($c_lib, 'milestone_50', 'default', $b['id']) . "</b>";
+                elseif ($prevScore < 100 && $newScore >= 100) $subText .= "<br><b style='color:#e91e63;'>💯 " . pick_commentary($c_lib, 'milestone_100', 'default', $b['id']) . "</b>";
              }
              
              // Partnership Milestones
-             if ($prev_p_runs < 50 && $p_runs >= 50) $subText .= "<br><span style='color:#00bcd4; font-weight:bold;'>?? " . pick_commentary($c_lib, 'partnership_50', 'default', $b['id']) . "</span>";
-             elseif ($prev_p_runs < 100 && $p_runs >= 100) $subText .= "<br><span style='color:#00bcd4; font-weight:bold;'>?? " . pick_commentary($c_lib, 'partnership_100', 'default', $b['id']) . "</span>";
+             if ($prev_p_runs < 50 && $p_runs >= 50) $subText .= "<br><span style='color:#00bcd4; font-weight:bold;'>🤝 " . pick_commentary($c_lib, 'partnership_50', 'default', $b['id']) . "</span>";
+             elseif ($prev_p_runs < 100 && $p_runs >= 100) $subText .= "<br><span style='color:#00bcd4; font-weight:bold;'>🤝 " . pick_commentary($c_lib, 'partnership_100', 'default', $b['id']) . "</span>";
         }
 
         $bowlerName = $b['bowler_name'] ?? 'Bowler';
@@ -244,7 +255,17 @@ function get_detailed_data(PDO $pdo, int $innings_id, ?int $target_run_count = n
         $currOver = intdiv(max(0, $legalBalls - ($is_legal?1:0)), 6) + 1;
         if (!isset($oversHistory[$currOver])) $oversHistory[$currOver] = ['over'=>$currOver, 'bowler'=>$bowlerName, 'balls'=>[]];
         $lbl = (string)$runs_bat;
-        if($b['extras_type']) { $lbl = strtoupper($b['extras_type']); if($extras>1 && !in_array($b['extras_type'],['wd','nb'])) $lbl=$extras.$lbl; }
+        if($b['extras_type']) { 
+            $extType = strtolower($b['extras_type']);
+            if($extType === 'nb') {
+                $lbl = ($runs_bat > 0) ? ('NB' . $runs_bat) : 'NB';
+            } elseif($extType === 'wd') {
+                $extraRuns = ($runs_bat > 0) ? $runs_bat : ($extras > 1 ? ($extras - 1) : 0);
+                $lbl = $extraRuns > 0 ? ('WD+' . $extraRuns) : 'WD';
+            } else {
+                $lbl = ($extras > 1 ? $extras : '') . strtoupper($b['extras_type']);
+            }
+        }
         if($b['is_wicket']) $lbl .= 'W';
         $oversHistory[$currOver]['balls'][] = ['id'=>$b['id'], 'label'=>$lbl, 'is_legal'=>$is_legal, 'runs_bat'=>$runs_bat, 'extras_type'=>$b['extras_type'], 'wicket_type'=>$b['wicket_type']];
 

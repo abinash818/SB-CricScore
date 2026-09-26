@@ -136,6 +136,7 @@ if ($driver === 'sqlite') {
     $tCols = $pdo->query("PRAGMA table_info(teams)")->fetchAll(PDO::FETCH_COLUMN, 1);
     if (!in_array('short_name', $tCols)) $pdo->exec("ALTER TABLE teams ADD COLUMN short_name TEXT DEFAULT NULL");
     if (!in_array('icon', $tCols)) $pdo->exec("ALTER TABLE teams ADD COLUMN icon TEXT DEFAULT 'shield'");
+    if (!in_array('group_name', $tCols)) $pdo->exec("ALTER TABLE teams ADD COLUMN group_name TEXT DEFAULT NULL");
 
 } else {
     // MySQL DDL for Hostinger
@@ -159,6 +160,7 @@ if ($driver === 'sqlite') {
       name VARCHAR(255) NOT NULL,
       short_name VARCHAR(10) DEFAULT NULL,
       icon VARCHAR(50) DEFAULT 'shield',
+      group_name VARCHAR(50) DEFAULT NULL,
       UNIQUE KEY uq_tour_team (tournament_id, name)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

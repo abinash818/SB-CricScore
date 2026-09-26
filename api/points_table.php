@@ -11,7 +11,7 @@ $tour->execute([$tournament_id]);
 $t = $tour->fetch(PDO::FETCH_ASSOC);
 if (!$t) { http_response_code(404); echo json_encode(['error'=>'Tournament not found']); exit; }
 
-$teamsStmt = $pdo->prepare("SELECT id,name FROM teams WHERE tournament_id=? ORDER BY name");
+$teamsStmt = $pdo->prepare("SELECT id, name, short_name, icon, group_name FROM teams WHERE tournament_id=? ORDER BY name");
 $teamsStmt->execute([$tournament_id]);
 $teams = $teamsStmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -20,6 +20,9 @@ foreach ($teams as $tm) {
   $rows[(int)$tm['id']] = [
     'team_id'=>(int)$tm['id'],
     'team'=> $tm['name'],
+    'short_name' => $tm['short_name'],
+    'icon' => $tm['icon'] ?: 'shield',
+    'group_name' => !empty($tm['group_name']) ? $tm['group_name'] : null,
     'P'=>0,'W'=>0,'L'=>0,'T'=>0,'NR'=>0,'Pts'=>0,
     'runs_for'=>0,'overs_for'=>0.0,'runs_against'=>0,'overs_against'=>0.0,
     'NRR'=>0.0
@@ -93,12 +96,31 @@ foreach ($vals as &$r) {
   $r['NRR'] = round($for - $ag, 3);
 }
 
-usort($vals, function($x,$y){
+$sorter = function($x,$y){
   if ($x['Pts'] !== $y['Pts']) return $y['Pts'] <=> $x['Pts'];
   if ($x['NRR'] !== $y['NRR']) return ($y['NRR'] <=> $x['NRR']);
   if ($x['W'] !== $y['W']) return $y['W'] <=> $x['W'];
   return strcmp($x['team'], $y['team']);
-});
+};
+
+usort($vals, $sorter);
+
+// Group-wise sorting
+$groups = [];
+$hasGroups = false;
+foreach ($vals as $row) {
+    if (!empty($row['group_name'])) {
+        $hasGroups = true;
+        $groups[$row['group_name']][] = $row;
+    }
+}
+
+if ($hasGroups) {
+    foreach ($groups as $gName => &$gRows) {
+        usort($gRows, $sorter);
+    }
+    ksort($groups);
+}
 
 echo json_encode([
   'ok'=>true,
@@ -111,5 +133,8 @@ echo json_encode([
     'nr_points'=>(int)$t['nr_points'],
     'loss_points'=>(int)$t['loss_points']
   ],
-  'table'=>$vals
+  'has_groups' => $hasGroups,
+  'groups' => $groups,
+  'table' => $vals
 ]);
+?>

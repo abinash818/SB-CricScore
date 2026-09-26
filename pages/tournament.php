@@ -291,7 +291,16 @@ $defOvers = (int)($tour['default_overs'] ?? 20);
     <input id="edit-tname" style="margin-bottom:10px;">
     
     <label class="muted">Short Name</label>
-    <input id="edit-tshort" style="margin-bottom:20px;">
+    <input id="edit-tshort" style="margin-bottom:10px;">
+
+    <label class="muted">Group / Zone</label>
+    <select id="edit-tgroup" style="margin-bottom:20px;">
+        <option value="">-- No Group --</option>
+        <option value="Group A">Group A (Zone A)</option>
+        <option value="Group B">Group B (Zone B)</option>
+        <option value="Group C">Group C (Zone C)</option>
+        <option value="Group D">Group D (Zone D)</option>
+    </select>
     
     <div style="display:flex; gap:10px;">
         <button onclick="saveTeamEdit()" style="flex:1;">Save</button>
@@ -417,7 +426,14 @@ $defOvers = (int)($tour['default_overs'] ?? 20);
                 <option value="local_fire_department">🔥</option>
             </select>
             <input type="text" name="names" placeholder="Team Name (e.g. Astro Titans)" required style="flex:2; margin:0;">
-            <input type="text" name="short_name" placeholder="Short (AST)" maxlength="4" style="flex:1; margin:0;">
+            <input type="text" name="short_name" placeholder="Short (AST)" maxlength="4" style="width:85px; margin:0;">
+            <select name="group_name" style="width:115px; margin:0;">
+                <option value="">No Group</option>
+                <option value="Group A" selected>Group A</option>
+                <option value="Group B">Group B</option>
+                <option value="Group C">Group C</option>
+                <option value="Group D">Group D</option>
+            </select>
             <button style="margin:0; width:auto; padding:10px 16px;">Add</button>
           </div>
         </form>
@@ -426,7 +442,7 @@ $defOvers = (int)($tour['default_overs'] ?? 20);
         <form id="addPlayerForm" onsubmit="addPlayersJS(event)" style="margin-bottom:20px; border-bottom:1px solid rgba(223,186,115,0.2); padding-bottom:15px;">
             <label class="muted" style="font-size:11.5px; text-transform:uppercase; font-weight:700;">Add Players to Team</label>
             <div class="form-row">
-                <select id="sel-team-add" name="team_id" required style="flex:1; margin:0;"><option value="">-- Select Team --</option><?php foreach($teams as $tm): ?><option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['name']) ?></option><?php endforeach; ?></select>
+                <select id="sel-team-add" name="team_id" required style="flex:1; margin:0;"><option value="">-- Select Team --</option><?php foreach($teams as $tm): ?><option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['name']) ?><?= !empty($tm['group_name']) ? ' ('.htmlspecialchars($tm['group_name']).')' : '' ?></option><?php endforeach; ?></select>
                 <button type="button" class="btn-secondary" onclick="toggleRegulars()" style="width:auto; padding:10px 14px; font-size:12px; margin:0;">+ Regulars</button>
             </div>
             
@@ -458,7 +474,12 @@ $defOvers = (int)($tour['default_overs'] ?? 20);
                 <div style="display:flex; align-items:center; gap:10px;">
                     <span class="material-symbols-outlined" style="font-size:24px; color:var(--gold-primary);"><?= $tm['icon'] ?? 'shield' ?></span>
                     <div>
-                        <div style="font-weight:800; color:#ffffff; font-size:16px; letter-spacing:0.3px;"><?= htmlspecialchars($tm['name']) ?></div>
+                        <div style="font-weight:800; color:#ffffff; font-size:16px; letter-spacing:0.3px; display:flex; align-items:center; gap:6px;">
+                            <?= htmlspecialchars($tm['name']) ?>
+                            <?php if(!empty($tm['group_name'])): ?>
+                                <span style="font-size:10px; background:var(--gold-gradient); color:#070710; padding:1px 6px; border-radius:4px; font-weight:900;"><?= htmlspecialchars($tm['group_name']) ?></span>
+                            <?php endif; ?>
+                        </div>
                         <div style="font-size:12px; color:var(--gold-light); font-weight:700;"><?= htmlspecialchars($tm['short_name'] ?? '') ?></div>
                     </div>
                 </div>
@@ -467,7 +488,7 @@ $defOvers = (int)($tour['default_overs'] ?? 20);
                         <span class="material-symbols-outlined" style="font-size:13px;">person_add</span> Register
                     </a>
                     <?php if($user): ?>
-                        <button class="icon-btn" onclick="openEditTeam(<?= $tm['id'] ?>, '<?= htmlspecialchars(addslashes($tm['name'])) ?>', '<?= htmlspecialchars($tm['short_name'] ?? '') ?>', '<?= htmlspecialchars($tm['icon'] ?? 'shield') ?>')" title="Edit Team">
+                        <button class="icon-btn" onclick="openEditTeam(<?= $tm['id'] ?>, '<?= htmlspecialchars(addslashes($tm['name'])) ?>', '<?= htmlspecialchars($tm['short_name'] ?? '') ?>', '<?= htmlspecialchars($tm['icon'] ?? 'shield') ?>', '<?= htmlspecialchars($tm['group_name'] ?? '') ?>')" title="Edit Team">
                             <span class="material-symbols-outlined" style="font-size:16px;">edit</span>
                         </button>
                         <button class="icon-btn danger-icon" onclick="deleteTeam(<?= $tm['id'] ?>)" title="Delete Team">
@@ -672,11 +693,12 @@ async function deletePlayer(pid) {
 }
 
 // --- Team Management ---
-function openEditTeam(tid, name, short, icon) { 
+function openEditTeam(tid, name, short, icon, group) { 
     document.getElementById('edit-tid').value = tid; 
     document.getElementById('edit-tname').value = name;
     document.getElementById('edit-tshort').value = short || '';
     document.getElementById('edit-ticon').value = icon || 'shield';
+    document.getElementById('edit-tgroup').value = group || '';
     document.getElementById('modal-edit-team').style.display = 'flex'; 
 }
 async function saveTeamEdit() { 
@@ -685,6 +707,7 @@ async function saveTeamEdit() {
     fd.append('name', document.getElementById('edit-tname').value);
     fd.append('short_name', document.getElementById('edit-tshort').value);
     fd.append('icon', document.getElementById('edit-ticon').value);
+    fd.append('group_name', document.getElementById('edit-tgroup').value);
     const r = await fetch('../api/team_edit.php', {method:'POST', body:fd}); 
     if(r.ok) location.reload(); else alert('Failed to update team'); 
 }
@@ -717,10 +740,27 @@ async function saveTournamentEdit() {
 async function addPlayersJS(e) {
     e.preventDefault();
     const form = e.target;
-    const r = await fetch('../api/player_add.php', {method:'POST', body:new FormData(form)});
-    const j = await r.json();
-    if(!r.ok) { alert(j.error); return; }
-    location.reload();
+    const btn = form.querySelector('button');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerText = 'Adding Players...';
+    }
+    try {
+        const r = await fetch('../api/player_add.php', {method:'POST', body:new FormData(form)});
+        const j = await r.json();
+        if(!r.ok) { alert(j.error || 'Failed to add players'); return; }
+        if (j.skipped && j.skipped.length > 0) {
+            alert(j.message);
+        }
+        location.reload();
+    } catch(err) {
+        alert('Error adding players: ' + err.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerText = 'Add Players';
+        }
+    }
 }
 
 // --- Add Team JS ---
@@ -766,7 +806,33 @@ async function deleteRegular(id) { if(!confirm("Remove from Regulars?")) return;
 
 async function doLogout(){ await fetch('../api/logout.php',{method:'POST'}); location.href='../index.php'; }
 async function submitForm(e, form, cb){ e.preventDefault(); const r=await fetch(form.action,{method:'POST',body:new FormData(form)}); const j=await r.json(); if(!r.ok){alert(j.error);return;} cb(j); }
-async function generateFixtures(){ const o=prompt('Overs?', '<?= $defOvers ?>'); if(o) { const fmt=prompt("1=Single,2=Double,3=Knockout","1"); let t='single'; if(fmt=='2')t='double'; else if(fmt=='3')t='knockout'; const fd=new FormData(); fd.append('tournament_id','<?= $id ?>'); fd.append('overs_limit',o); fd.append('type',t); await fetch('../api/fixtures_generate.php',{method:'POST',body:fd}); location.reload(); }}
+async function generateFixtures(){ 
+    const o = prompt('Overs per match?', '<?= $defOvers ?>'); 
+    if(!o) return;
+    const fmt = prompt("Select Fixture Format:\n1 = 🏆 Group Stage (Group A vs Group A, Group B vs Group B)\n2 = 🔄 Single Round Robin (All teams play each other)\n3 = 🔁 Double Round Robin (Home & Away)\n4 = 🥊 Knockout Tournament Bracket", "1"); 
+    if(!fmt) return;
+    let t = 'group'; 
+    if(fmt == '2') t = 'single'; 
+    else if(fmt == '3') t = 'double'; 
+    else if(fmt == '4') t = 'knockout'; 
+    
+    const fd = new FormData(); 
+    fd.append('tournament_id', '<?= $id ?>'); 
+    fd.append('overs_limit', o); 
+    fd.append('type', t); 
+    try {
+        const r = await fetch('../api/fixtures_generate.php', { method: 'POST', body: fd }); 
+        const j = await r.json();
+        if(j.ok) {
+            alert(`Generated ${j.created} match fixtures successfully!`);
+            location.reload();
+        } else {
+            alert(j.error || 'Failed to generate fixtures');
+        }
+    } catch(err) {
+        alert('Error: ' + err.message);
+    }
+}
 async function deleteMatch(mid){ if(confirm("Delete match?")) { const fd=new FormData(); fd.append('match_id',mid); await fetch('../api/match_delete.php',{method:'POST',body:fd}); location.reload(); }}
 async function deleteTournament(){ if(confirm("Delete Tournament?")) { const fd=new FormData(); fd.append('tournament_id',<?= $id ?>); await fetch('../api/tournament_delete.php',{method:'POST',body:fd}); location.href='../index.php'; }}
 

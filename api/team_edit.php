@@ -8,6 +8,7 @@ $id = (int)($_POST['team_id'] ?? 0);
 $name = trim($_POST['name'] ?? '');
 $short = trim($_POST['short_name'] ?? '');
 $icon = trim($_POST['icon'] ?? 'shield');
+$groupName = trim($_POST['group_name'] ?? '');
 
 if ($id <= 0 || empty($name)) {
     http_response_code(400);
@@ -16,8 +17,8 @@ if ($id <= 0 || empty($name)) {
 }
 
 try {
-    $stmt = $pdo->prepare("UPDATE teams SET name = ?, short_name = ?, icon = ? WHERE id = ?");
-    $stmt->execute([$name, $short, $icon, $id]);
+    $stmt = $pdo->prepare("UPDATE teams SET name = ?, short_name = ?, icon = ?, group_name = ? WHERE id = ?");
+    $stmt->execute([$name, $short, $icon, ($groupName ?: null), $id]);
     echo json_encode(['ok' => true]);
 } catch (Exception $e) {
     http_response_code(500);

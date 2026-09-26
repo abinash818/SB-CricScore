@@ -83,6 +83,18 @@ if ($action === 'add') {
         exit;
     }
 
+    // Check duplicate mobile in team (if mobile provided)
+    if (!empty($mobile)) {
+        $chkMobile = $pdo->prepare("SELECT id, name FROM players WHERE team_id = ? AND mobile = ?");
+        $chkMobile->execute([$teamId, $mobile]);
+        $existMobile = $chkMobile->fetch(PDO::FETCH_ASSOC);
+        if ($existMobile) {
+            http_response_code(400);
+            echo json_encode(['error' => "Mobile number '{$mobile}' is already registered with player '{$existMobile['name']}' in this team!"]);
+            exit;
+        }
+    }
+
     // Handle Photo Upload with Auto-Compression & Resizing
     $profilePic = null;
     $uploadDir = __DIR__ . '/../uploads/players/';
