@@ -138,6 +138,13 @@ if ($driver === 'sqlite') {
     if (!in_array('icon', $tCols)) $pdo->exec("ALTER TABLE teams ADD COLUMN icon TEXT DEFAULT 'shield'");
     if (!in_array('group_name', $tCols)) $pdo->exec("ALTER TABLE teams ADD COLUMN group_name TEXT DEFAULT NULL");
 
+    $mCols = $pdo->query("PRAGMA table_info(matches)")->fetchAll(PDO::FETCH_COLUMN, 1);
+    if (!in_array('is_final', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN is_final INTEGER DEFAULT 0");
+    if (!in_array('man_of_match_id', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN man_of_match_id INTEGER DEFAULT NULL");
+    if (!in_array('match_date', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN match_date TEXT DEFAULT NULL");
+    if (!in_array('match_time', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN match_time TEXT DEFAULT NULL");
+    if (!in_array('stage', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN stage TEXT DEFAULT 'League'");
+
 } else {
     // MySQL DDL for Hostinger
     $pdo->exec("
@@ -279,6 +286,9 @@ if ($driver === 'sqlite') {
         $mCols = $pdo->query("SHOW COLUMNS FROM matches")->fetchAll(PDO::FETCH_COLUMN);
         if (!in_array('is_final', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN is_final TINYINT(1) DEFAULT 0");
         if (!in_array('man_of_match_id', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN man_of_match_id INT DEFAULT NULL");
+        if (!in_array('match_date', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN match_date VARCHAR(30) DEFAULT NULL");
+        if (!in_array('match_time', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN match_time VARCHAR(30) DEFAULT NULL");
+        if (!in_array('stage', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN stage VARCHAR(50) DEFAULT 'League'");
     } catch (Exception $e) {}
 }
 

@@ -11,7 +11,7 @@ $tour = $t->fetch(PDO::FETCH_ASSOC);
 if (!$tour) die('Tournament not found');
 
 // Fetch Teams
-$teamsStmt = $pdo->prepare('SELECT * FROM teams WHERE tournament_id=? ORDER BY name');
+$teamsStmt = $pdo->prepare('SELECT * FROM teams WHERE tournament_id=? ORDER BY group_name ASC, name ASC');
 $teamsStmt->execute([$id]);
 $teams = $teamsStmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -35,21 +35,58 @@ $otherTeamsStmt = $pdo->prepare("
 $otherTeamsStmt->execute([$id]);
 $existingOtherTeams = $otherTeamsStmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch Matches
+// Fetch Matches with Winner Info and Date/Time/Stage
 $matchesStmt = $pdo->prepare("
     SELECT m.*, 
-           ta.name as teamA, ta.short_name as teamA_short, ta.icon as teamA_icon,
-           tb.name as teamB, tb.short_name as teamB_short, tb.icon as teamB_icon 
+           ta.name as teamA, ta.short_name as teamA_short, ta.icon as teamA_icon, ta.group_name as teamA_group,
+           tb.name as teamB, tb.short_name as teamB_short, tb.icon as teamB_icon, tb.group_name as teamB_group,
+           tw.name as winner_name, tw.short_name as winner_short
     FROM matches m 
     JOIN teams ta ON ta.id=m.team_a_id 
     JOIN teams tb ON tb.id=m.team_b_id 
+    LEFT JOIN teams tw ON tw.id=m.winner_team_id
     WHERE m.tournament_id=? 
-    ORDER BY m.id DESC
+    ORDER BY m.is_final ASC, m.id ASC
 ");
 $matchesStmt->execute([$id]);
 $matches = $matchesStmt->fetchAll(PDO::FETCH_ASSOC);
 
 $defOvers = (int)($tour['default_overs'] ?? 20);
+
+// Categorize matches for the Bracket Tree View
+$groupAMatches = [];
+$groupBMatches = [];
+$finalMatches = [];
+$otherMatches = [];
+
+foreach($matches as $m) {
+    if (!empty($m['is_final']) || strtolower($m['stage'] ?? '') === 'final') {
+        $finalMatches[] = $m;
+    } elseif ($m['teamA_group'] === 'Group A' || $m['teamB_group'] === 'Group A' || strpos(strtolower($m['stage'] ?? ''), 'group a') !== false) {
+        $groupAMatches[] = $m;
+    } elseif ($m['teamA_group'] === 'Group B' || $m['teamB_group'] === 'Group B' || strpos(strtolower($m['stage'] ?? ''), 'group b') !== false) {
+        $groupBMatches[] = $m;
+    } else {
+        $otherMatches[] = $m;
+    }
+}
+
+// If no explicit groups, distribute general matches cleanly across left/right branches
+if (empty($groupAMatches) && empty($groupBMatches) && !empty($matches)) {
+    if (count($matches) === 1) {
+        $finalMatches = $matches;
+    } else {
+        $nonFinals = array_values(array_filter($matches, fn($x) => empty($x['is_final'])));
+        $finals = array_values(array_filter($matches, fn($x) => !empty($x['is_final'])));
+        if (empty($finals)) {
+            $finals = [array_pop($nonFinals)];
+        }
+        $finalMatches = $finals;
+        $mid = (int)ceil(count($nonFinals) / 2);
+        $groupAMatches = array_slice($nonFinals, 0, $mid);
+        $groupBMatches = array_slice($nonFinals, $mid);
+    }
+}
 ?>
 <!doctype html>
 <html lang="en">
@@ -73,7 +110,7 @@ $defOvers = (int)($tour['default_overs'] ?? 20);
       grid-template-columns: 1fr 1fr;
       gap: 24px;
     }
-    @media (max-width: 850px) {
+    @media (max-width: 900px) {
       .grid-2col { grid-template-columns: 1fr; }
     }
     .form-row {
@@ -103,12 +140,6 @@ $defOvers = (int)($tour['default_overs'] ?? 20);
       max-width: 500px;
       position: relative;
       color: #ffffff;
-    }
-    .modal-lg {
-      max-width: 860px;
-      max-height: 90vh;
-      display: flex;
-      flex-direction: column;
     }
     .icon-btn {
       background: rgba(255, 255, 255, 0.08) !important;
@@ -209,24 +240,123 @@ $defOvers = (int)($tour['default_overs'] ?? 20);
       margin: 4px;
       cursor: pointer;
     }
-    .astro-badge {
-      display: inline-flex;
+
+    /* BRACKET TREE STYLES */
+    .bracket-tree-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: stretch;
+      gap: 16px;
+      overflow-x: auto;
+      padding: 20px 12px;
+      background: radial-gradient(circle at 50% 50%, rgba(223, 186, 115, 0.08) 0%, rgba(13, 13, 26, 0.95) 100%);
+      border: 1px solid rgba(223, 186, 115, 0.28);
+      border-radius: var(--radius-lg, 12px);
+      box-shadow: 0 10px 35px rgba(0,0,0,0.6), 0 0 20px rgba(223, 186, 115, 0.15);
+      min-width: 100%;
+    }
+    @media (max-width: 900px) {
+      .bracket-tree-container {
+        flex-direction: column;
+      }
+    }
+    .bracket-column {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-width: 220px;
+    }
+    .bracket-col-header {
+      text-align: center;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-weight: 900;
+      font-size: 13px;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .bracket-col-header.group-a {
+      background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+    }
+    .bracket-col-header.group-b {
+      background: linear-gradient(135deg, #ec4899 0%, #be185d 100%);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(236, 72, 153, 0.4);
+    }
+    .bracket-col-header.final-header {
+      background: var(--gold-gradient);
+      color: #070710;
+      box-shadow: var(--gold-glow);
+    }
+
+    .bracket-center-final {
+      display: flex;
+      flex-direction: column;
       align-items: center;
-      gap: 5px;
+      justify-content: center;
+      padding: 10px;
+      min-width: 240px;
+    }
+    .trophy-badge-circle {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: var(--gold-gradient);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      color: #070710;
+      margin: 0 auto 10px auto;
+      box-shadow: 0 0 25px rgba(223, 186, 115, 0.6);
+    }
+
+    .bracket-match-node {
+      background: #181832;
+      border: 1px solid rgba(223, 186, 115, 0.3);
+      border-radius: 8px;
+      padding: 10px 12px;
+      position: relative;
+      transition: all 0.2s;
+      text-decoration: none;
+      color: #ffffff !important;
+      display: block;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    }
+    .bracket-match-node:hover {
+      border-color: var(--gold-primary);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 18px rgba(223, 186, 115, 0.3);
+    }
+    .bracket-match-node.completed-node {
+      border-color: rgba(16, 185, 129, 0.5);
+    }
+    .bracket-node-date {
       font-size: 11px;
-      padding: 3px 8px;
-      border-radius: 4px;
+      font-weight: 800;
+      color: var(--gold-light);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      border-bottom: 1px dashed rgba(223, 186, 115, 0.2);
+      padding-bottom: 4px;
+    }
+    .bracket-team-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 3px 0;
+      font-size: 13.5px;
       font-weight: 700;
     }
-    .astro-badge.imported {
-      background: rgba(16, 185, 129, 0.25);
-      color: #34d399;
-      border: 1px solid rgba(16, 185, 129, 0.5);
-    }
-    .astro-badge.new {
-      background: rgba(245, 158, 11, 0.25);
-      color: #fbbf24;
-      border: 1px solid rgba(245, 158, 11, 0.5);
+    .bracket-team-line.is-winner {
+      color: #34d399 !important;
+      font-weight: 900;
     }
   </style>
 </head>
@@ -309,7 +439,62 @@ $defOvers = (int)($tour['default_overs'] ?? 20);
   </div>
 </div>
 
+<!-- Edit Match Fixture Modal -->
+<div id="modal-edit-match" class="modal-backdrop">
+  <div class="modal">
+    <h3 style="color:#ffffff; margin-bottom:12px;">Edit Match Fixture</h3>
+    <input type="hidden" id="edit-m-id">
+    
+    <label class="muted">Team A</label>
+    <select id="edit-m-team-a" style="margin-bottom:10px;">
+      <?php foreach($teams as $tm): ?><option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['name']) ?><?= !empty($tm['group_name'])?' ('.$tm['group_name'].')':'' ?></option><?php endforeach; ?>
+    </select>
 
+    <label class="muted">Team B</label>
+    <select id="edit-m-team-b" style="margin-bottom:10px;">
+      <?php foreach($teams as $tm): ?><option value="<?= $tm['id'] ?>"><?= htmlspecialchars($tm['name']) ?><?= !empty($tm['group_name'])?' ('.$tm['group_name'].')':'' ?></option><?php endforeach; ?>
+    </select>
+
+    <div style="display:flex; gap:10px; margin-bottom:10px;">
+      <div style="flex:1;">
+        <label class="muted">Match Date</label>
+        <input type="date" id="edit-m-date" style="margin:0;">
+      </div>
+      <div style="flex:1;">
+        <label class="muted">Match Time</label>
+        <input type="text" id="edit-m-time" placeholder="e.g. 10:30 AM" style="margin:0;">
+      </div>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-bottom:15px;">
+      <div style="flex:1;">
+        <label class="muted">Stage / Round</label>
+        <select id="edit-m-stage" style="margin:0;">
+          <option value="League">League Match</option>
+          <option value="Group A">Group A Match</option>
+          <option value="Group B">Group B Match</option>
+          <option value="Quarterfinal">Quarterfinal</option>
+          <option value="Semifinal">Semifinal</option>
+          <option value="Final">Grand Final</option>
+        </select>
+      </div>
+      <div style="width:90px;">
+        <label class="muted">Overs</label>
+        <input type="number" id="edit-m-overs" value="<?= $defOvers ?>" style="margin:0;">
+      </div>
+    </div>
+
+    <label style="display:flex; align-items:center; gap:8px; margin-bottom:20px; background:rgba(255,255,255,0.05); padding:10px; border-radius:8px;">
+        <input type="checkbox" id="edit-m-final" style="width:auto; margin:0;"> 
+        <span style="color:#ffffff; font-weight:700;">🏆 Is Grand Final Match?</span>
+    </label>
+
+    <div style="display:flex; gap:10px;">
+        <button onclick="saveMatchEdit()" style="flex:1;">Save Changes</button>
+        <button class="danger" onclick="document.getElementById('modal-edit-match').style.display='none'" style="flex:1;">Cancel</button>
+    </div>
+  </div>
+</div>
 
 <div class="wrap">
   <!-- Topbar Header -->
@@ -538,8 +723,16 @@ $defOvers = (int)($tour['default_overs'] ?? 20);
 
     <!-- Column 2: Fixtures & Matches -->
     <div class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; flex-wrap:wrap; gap:10px;">
         <h2>Fixtures & Matches (<?= count($matches) ?>)</h2>
+        <div class="view-toggle" style="display:flex; background:#181830; border:1px solid rgba(223,186,115,0.3); border-radius:8px; padding:3px;">
+          <button type="button" id="btn-view-list" class="chip active" onclick="switchFixtureView('list')" style="border:none; cursor:pointer; font-size:12px; font-weight:700;">
+            <span class="material-symbols-outlined" style="font-size:15px;">list</span> List View
+          </button>
+          <button type="button" id="btn-view-bracket" class="chip" onclick="switchFixtureView('bracket')" style="border:none; cursor:pointer; font-size:12px; font-weight:700; background:transparent; color:#cbd5e1;">
+            <span class="material-symbols-outlined" style="font-size:15px;">account_tree</span> Bracket Tree
+          </button>
+        </div>
       </div>
 
       <?php if ($user && count($teams) >= 2): ?>
@@ -548,24 +741,25 @@ $defOvers = (int)($tour['default_overs'] ?? 20);
             <input type="hidden" name="tournament_id" value="<?= $id ?>">
             <label class="muted" style="font-size:11.5px; text-transform:uppercase; font-weight:700;">Schedule New Match</label>
             <div class="form-row">
-                <select name="team_a_id" required style="flex:1; margin:0;"><option value="">Team A</option><?php foreach($teams as $tm): ?><option value="<?= (int)$tm['id'] ?>"><?= htmlspecialchars($tm['name']) ?></option><?php endforeach; ?></select>
+                <select name="team_a_id" required style="flex:1; margin:0;"><option value="">Team A</option><?php foreach($teams as $tm): ?><option value="<?= (int)$tm['id'] ?>"><?= htmlspecialchars($tm['name']) ?><?= !empty($tm['group_name'])?' ('.$tm['group_name'].')':'' ?></option><?php endforeach; ?></select>
                 <div style="padding:0 6px; color:var(--gold-primary); font-weight:900;">VS</div>
-                <select name="team_b_id" required style="flex:1; margin:0;"><option value="">Team B</option><?php foreach($teams as $tm): ?><option value="<?= (int)$tm['id'] ?>"><?= htmlspecialchars($tm['name']) ?></option><?php endforeach; ?></select>
+                <select name="team_b_id" required style="flex:1; margin:0;"><option value="">Team B</option><?php foreach($teams as $tm): ?><option value="<?= (int)$tm['id'] ?>"><?= htmlspecialchars($tm['name']) ?><?= !empty($tm['group_name'])?' ('.$tm['group_name'].')':'' ?></option><?php endforeach; ?></select>
             </div>
             
             <div class="form-row" style="margin-top:8px;">
-                <select name="batting_first_team_id" required style="flex:2; margin:0;"><option value="">Batting First (Toss Winner)</option><?php foreach($teams as $tm): ?><option value="<?= (int)$tm['id'] ?>"><?= htmlspecialchars($tm['name']) ?></option><?php endforeach; ?></select>
-                <input type="number" name="overs_limit" value="<?= $defOvers ?>" placeholder="Overs" style="width:85px; margin:0;">
+                <input type="date" name="match_date" placeholder="Date" style="flex:1; margin:0;">
+                <input type="text" name="match_time" placeholder="Time (10:00 AM)" style="flex:1; margin:0;">
+                <input type="number" name="overs_limit" value="<?= $defOvers ?>" placeholder="Overs" style="width:75px; margin:0;">
                 <label style="display:flex; align-items:center; gap:5px; font-size:12px; color:var(--gold-light); margin-left:6px;">
                     <input type="checkbox" name="is_final" value="1" style="width:auto; margin:0;"> Final
                 </label>
             </div>
-            <button style="width:100%; margin-top:10px;">START MATCH NOW</button>
+            <button style="width:100%; margin-top:10px;">START / SCHEDULE MATCH NOW</button>
         </form>
       <?php endif; ?>
 
-      <!-- Match List -->
-      <div>
+      <!-- 1. List View Container -->
+      <div id="fixture-list-view">
         <?php if(empty($matches)): ?>
           <div style="text-align:center; padding:30px;" class="muted">No matches scheduled yet. Click "Generate Fixtures" or schedule one above.</div>
         <?php endif; ?>
@@ -579,31 +773,133 @@ $defOvers = (int)($tour['default_overs'] ?? 20);
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
                   <div style="display:flex; align-items:center; gap:8px;">
                     <span class="material-symbols-outlined" style="font-size:20px; color:var(--gold-primary);"><?= $m['teamA_icon'] ?: 'shield' ?></span>
-                    <b style="color:#ffffff !important; font-size:15px;"><?= htmlspecialchars($m['teamA_short'] ?: $m['teamA']) ?></b>
+                    <b style="color:#ffffff !important; font-size:15px; <?= ($m['winner_team_id'] == $m['team_a_id']) ? 'color:#34d399 !important;' : '' ?>"><?= htmlspecialchars($m['teamA_short'] ?: $m['teamA']) ?></b>
                   </div>
                   <span style="font-size:12px; font-weight:800; color:var(--gold-primary); padding:0 8px;">VS</span>
                   <div style="display:flex; align-items:center; gap:8px;">
-                    <b style="color:#ffffff !important; font-size:15px;"><?= htmlspecialchars($m['teamB_short'] ?: $m['teamB']) ?></b>
+                    <b style="color:#ffffff !important; font-size:15px; <?= ($m['winner_team_id'] == $m['team_b_id']) ? 'color:#34d399 !important;' : '' ?>"><?= htmlspecialchars($m['teamB_short'] ?: $m['teamB']) ?></b>
                     <span class="material-symbols-outlined" style="font-size:20px; color:var(--gold-primary);"><?= $m['teamB_icon'] ?: 'shield' ?></span>
                   </div>
                 </div>
 
-                <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
-                  <span class="badge <?= $isLive ? 'live' : '' ?>">
-                    <?= $mStatus === 'completed' ? '🏁 Completed' : ($isLive ? '🔴 LIVE' : '📅 Scheduled') ?>
-                  </span>
-                  <span style="font-size:12px; color:#cbd5e1;">&bull; <?= (int)$m['overs_limit'] ?> overs</span>
-                  <?php if(!empty($m['is_final'])): ?><span style="font-size:10px; background:#f59e0b; color:#000; font-weight:900; padding:1px 6px; border-radius:4px;">FINAL</span><?php endif; ?>
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-top:6px; flex-wrap:wrap; gap:6px;">
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <span class="badge <?= $isLive ? 'live' : '' ?>">
+                      <?= $mStatus === 'completed' ? '🏁 ' . htmlspecialchars($m['winner_short'] ?: $m['winner_name'] ?: 'Completed') : ($isLive ? '🔴 LIVE' : '📅 Scheduled') ?>
+                    </span>
+                    <span style="font-size:12px; color:#cbd5e1;">&bull; <?= (int)$m['overs_limit'] ?> ov</span>
+                    <?php if(!empty($m['is_final'])): ?><span style="font-size:10px; background:#f59e0b; color:#000; font-weight:900; padding:1px 6px; border-radius:4px;">FINAL</span><?php endif; ?>
+                  </div>
+                  <?php if(!empty($m['match_date']) || !empty($m['match_time'])): ?>
+                    <span style="font-size:11px; color:var(--gold-light); font-weight:700;">
+                      📅 <?= htmlspecialchars($m['match_date'] ?? '') ?> <?= !empty($m['match_time']) ? '• ' . htmlspecialchars($m['match_time']) : '' ?>
+                    </span>
+                  <?php endif; ?>
                 </div>
             </a>
             <?php if ($user): ?>
-                <button class="icon-btn danger-icon" onclick="deleteMatch(<?= (int)$m['id'] ?>)" title="Delete Match" style="margin-left:12px;">
-                    <span class="material-symbols-outlined" style="font-size:16px;">delete</span>
-                </button>
+                <div style="display:flex; align-items:center; gap:4px; margin-left:8px;">
+                    <button class="icon-btn" onclick="openEditMatch(<?= (int)$m['id'] ?>, <?= (int)$m['team_a_id'] ?>, <?= (int)$m['team_b_id'] ?>, <?= (int)$m['overs_limit'] ?>, '<?= htmlspecialchars(addslashes($m['match_date'] ?? '')) ?>', '<?= htmlspecialchars(addslashes($m['match_time'] ?? '')) ?>', '<?= htmlspecialchars(addslashes($m['stage'] ?? 'League')) ?>', <?= (int)$m['is_final'] ?>)" title="Edit Match Fixture">
+                        <span class="material-symbols-outlined" style="font-size:16px;">edit</span>
+                    </button>
+                    <button class="icon-btn danger-icon" onclick="deleteMatch(<?= (int)$m['id'] ?>)" title="Delete Match">
+                        <span class="material-symbols-outlined" style="font-size:16px;">delete</span>
+                    </button>
+                </div>
             <?php endif; ?>
           </div>
         <?php endforeach; ?>
       </div>
+
+      <!-- 2. Visual Bracket Tree View (போட்டி பிராக்கெட் முறை) -->
+      <div id="fixture-bracket-view" style="display:none;">
+        <div class="bracket-tree-container">
+          
+          <!-- LEFT BRANCH: GROUP A / QUARTERFINALS -->
+          <div class="bracket-column">
+            <div class="bracket-col-header group-a">
+              <span class="material-symbols-outlined" style="font-size:15px; vertical-align:middle;">groups</span> Group A Matches
+            </div>
+            <?php if(empty($groupAMatches)): ?>
+              <div class="muted" style="font-size:12px; text-align:center; padding:15px;">No Group A matches.</div>
+            <?php endif; ?>
+            <?php foreach($groupAMatches as $gm): ?>
+              <a href="match.php?id=<?= $gm['id'] ?>" class="bracket-match-node <?= ($gm['status']==='completed')?'completed-node':'' ?>">
+                <div class="bracket-node-date">
+                  <span>📅 <?= htmlspecialchars($gm['match_date'] ?: 'TBD') ?> <?= !empty($gm['match_time'])?'• '.$gm['match_time']:'' ?></span>
+                  <span><?= (int)$gm['overs_limit'] ?> Ov</span>
+                </div>
+                <div class="bracket-team-line <?= ($gm['winner_team_id']==$gm['team_a_id'])?'is-winner':'' ?>">
+                  <span>🛡 <?= htmlspecialchars($gm['teamA_short'] ?: $gm['teamA']) ?></span>
+                  <?php if($gm['winner_team_id']==$gm['team_a_id']): ?><span>👑</span><?php endif; ?>
+                </div>
+                <div class="bracket-team-line <?= ($gm['winner_team_id']==$gm['team_b_id'])?'is-winner':'' ?>">
+                  <span>🛡 <?= htmlspecialchars($gm['teamB_short'] ?: $gm['teamB']) ?></span>
+                  <?php if($gm['winner_team_id']==$gm['team_b_id']): ?><span>👑</span><?php endif; ?>
+                </div>
+              </a>
+            <?php endforeach; ?>
+          </div>
+
+          <!-- CENTER COLUMN: GRAND FINAL & TROPHY -->
+          <div class="bracket-center-final">
+            <div class="trophy-badge-circle">🏆</div>
+            <div class="bracket-col-header final-header">GRAND FINAL</div>
+
+            <?php if(empty($finalMatches)): ?>
+              <div class="bracket-match-node" style="text-align:center; min-width:210px; padding:15px;">
+                <div class="muted" style="font-size:12px;">Final Match</div>
+                <b style="color:var(--gold-light); font-size:14px;">Group A Winner vs Group B Winner</b>
+              </div>
+            <?php else: ?>
+              <?php foreach($finalMatches as $fm): ?>
+                <a href="match.php?id=<?= $fm['id'] ?>" class="bracket-match-node <?= ($fm['status']==='completed')?'completed-node':'' ?>" style="min-width:210px; border:2px solid var(--gold-primary); box-shadow:var(--gold-glow);">
+                  <div class="bracket-node-date" style="color:var(--gold-primary); font-weight:900;">
+                    <span>📅 <?= htmlspecialchars($fm['match_date'] ?: 'GRAND FINAL') ?></span>
+                    <span><?= (int)$fm['overs_limit'] ?> Ov</span>
+                  </div>
+                  <div class="bracket-team-line <?= ($fm['winner_team_id']==$fm['team_a_id'])?'is-winner':'' ?>" style="font-size:15px;">
+                    <span>🛡 <b><?= htmlspecialchars($fm['teamA_short'] ?: $fm['teamA']) ?></b></span>
+                    <?php if($fm['winner_team_id']==$fm['team_a_id']): ?><span>🏆 WINNER</span><?php endif; ?>
+                  </div>
+                  <div class="bracket-team-line <?= ($fm['winner_team_id']==$fm['team_b_id'])?'is-winner':'' ?>" style="font-size:15px;">
+                    <span>🛡 <b><?= htmlspecialchars($fm['teamB_short'] ?: $fm['teamB']) ?></b></span>
+                    <?php if($fm['winner_team_id']==$fm['team_b_id']): ?><span>🏆 WINNER</span><?php endif; ?>
+                  </div>
+                </a>
+              <?php endforeach; ?>
+            <?php endif; ?>
+          </div>
+
+          <!-- RIGHT BRANCH: GROUP B / QUARTERFINALS -->
+          <div class="bracket-column">
+            <div class="bracket-col-header group-b">
+              <span class="material-symbols-outlined" style="font-size:15px; vertical-align:middle;">groups</span> Group B Matches
+            </div>
+            <?php if(empty($groupBMatches)): ?>
+              <div class="muted" style="font-size:12px; text-align:center; padding:15px;">No Group B matches.</div>
+            <?php endif; ?>
+            <?php foreach($groupBMatches as $gm): ?>
+              <a href="match.php?id=<?= $gm['id'] ?>" class="bracket-match-node <?= ($gm['status']==='completed')?'completed-node':'' ?>">
+                <div class="bracket-node-date">
+                  <span>📅 <?= htmlspecialchars($gm['match_date'] ?: 'TBD') ?> <?= !empty($gm['match_time'])?'• '.$gm['match_time']:'' ?></span>
+                  <span><?= (int)$gm['overs_limit'] ?> Ov</span>
+                </div>
+                <div class="bracket-team-line <?= ($gm['winner_team_id']==$gm['team_a_id'])?'is-winner':'' ?>">
+                  <span>🛡 <?= htmlspecialchars($gm['teamA_short'] ?: $gm['teamA']) ?></span>
+                  <?php if($gm['winner_team_id']==$gm['team_a_id']): ?><span>👑</span><?php endif; ?>
+                </div>
+                <div class="bracket-team-line <?= ($gm['winner_team_id']==$gm['team_b_id'])?'is-winner':'' ?>">
+                  <span>🛡 <?= htmlspecialchars($gm['teamB_short'] ?: $gm['teamB']) ?></span>
+                  <?php if($gm['winner_team_id']==$gm['team_b_id']): ?><span>👑</span><?php endif; ?>
+                </div>
+              </a>
+            <?php endforeach; ?>
+          </div>
+
+        </div>
+      </div>
+
     </div>
 
   </div>
@@ -611,6 +907,29 @@ $defOvers = (int)($tour['default_overs'] ?? 20);
 
 <script>
 let localStats = null, globalStats = null, currentTab = 'bat', sort = { col:'runs', asc:false };
+
+function switchFixtureView(view) {
+    const listBtn = document.getElementById('btn-view-list');
+    const bracketBtn = document.getElementById('btn-view-bracket');
+    const listView = document.getElementById('fixture-list-view');
+    const bracketView = document.getElementById('fixture-bracket-view');
+
+    if (view === 'bracket') {
+        listView.style.display = 'none';
+        bracketView.style.display = 'block';
+        bracketBtn.style.background = 'var(--gold-gradient)';
+        bracketBtn.style.color = '#070710';
+        listBtn.style.background = 'transparent';
+        listBtn.style.color = '#cbd5e1';
+    } else {
+        bracketView.style.display = 'none';
+        listView.style.display = 'block';
+        listBtn.style.background = 'var(--gold-gradient)';
+        listBtn.style.color = '#070710';
+        bracketBtn.style.background = 'transparent';
+        bracketBtn.style.color = '#cbd5e1';
+    }
+}
 
 async function loadStats() {
     try {
@@ -645,7 +964,7 @@ function renderCardList(type) {
     if(!data||data.length===0) { box.innerHTML='<div class="muted" style="padding:15px; text-align:center;">No player stats recorded yet.</div>'; return; }
     box.innerHTML = data.map((p,i) => {
         let meta='', val='', cap='';
-        if(type==='bat') { if(i===0) cap='orange-cap'; val=`${p.runs} <span style="font-size:11px;color:#cbd5e1">Runs</span>`; meta=`Mt:${p.matches} | SR:${p.sr}`; }
+        if(type==='bat') { if(i===0) cap='orange-cap'; val=`${p.runs} <span style="font-size:11px;color:#cbd5e1">Runs (${p.balls||0}b)</span>`; meta=`Mt:${p.matches} | SR:${p.sr}`; }
         else if(type==='bowl') { if(i===0) cap='purple-cap'; val=`${p.wickets} <span style="font-size:11px;color:#cbd5e1">Wkts</span>`; meta=`Mt:${p.matches} | Ec:${p.econ}`; }
         else { val=p.count; meta=p.team; }
         return `<div class="stat-card ${cap}"><div class="stat-row"><div><div style="font-weight:700;"><a href="player.php?id=${p.id}" style="color:#ffffff;text-decoration:none;">${i+1}. ${p.name}</a></div><div class="stat-meta">${meta}</div></div><div class="stat-val">${val}</div></div></div>`;
@@ -722,6 +1041,43 @@ async function deleteTeam(tid) {
         opts.forEach(o => o.remove());
     } else {
         alert(j.error || 'Failed to delete team');
+    }
+}
+
+// --- Match Management ---
+function openEditMatch(id, teamAId, teamBId, overs, date, time, stage, isFinal) {
+    document.getElementById('edit-m-id').value = id;
+    document.getElementById('edit-m-team-a').value = teamAId;
+    document.getElementById('edit-m-team-b').value = teamBId;
+    document.getElementById('edit-m-overs').value = overs || <?= $defOvers ?>;
+    document.getElementById('edit-m-date').value = date || '';
+    document.getElementById('edit-m-time').value = time || '';
+    document.getElementById('edit-m-stage').value = stage || 'League';
+    document.getElementById('edit-m-final').checked = (isFinal == 1);
+    document.getElementById('modal-edit-match').style.display = 'flex';
+}
+
+async function saveMatchEdit() {
+    const fd = new FormData();
+    fd.append('match_id', document.getElementById('edit-m-id').value);
+    fd.append('team_a_id', document.getElementById('edit-m-team-a').value);
+    fd.append('team_b_id', document.getElementById('edit-m-team-b').value);
+    fd.append('overs_limit', document.getElementById('edit-m-overs').value);
+    fd.append('match_date', document.getElementById('edit-m-date').value);
+    fd.append('match_time', document.getElementById('edit-m-time').value);
+    fd.append('stage', document.getElementById('edit-m-stage').value);
+    fd.append('is_final', document.getElementById('edit-m-final').checked ? 1 : 0);
+
+    try {
+        const r = await fetch('../api/match_edit.php', { method: 'POST', body: fd });
+        const j = await r.json();
+        if (j.ok) {
+            location.reload();
+        } else {
+            alert(j.error || 'Failed to update match');
+        }
+    } catch(e) {
+        alert('Error: ' + e.message);
     }
 }
 
