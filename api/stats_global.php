@@ -7,7 +7,7 @@ $batSql = "
   SELECT MAX(p.id) as id, p.name, 
     COUNT(DISTINCT m.id) as matches,
     SUM(b.runs_bat) as runs,
-    COUNT(b.id) as balls,
+    COUNT(CASE WHEN COALESCE(b.extras_type, '') != 'wd' THEN 1 END) as balls,
     SUM(CASE WHEN b.runs_bat=4 THEN 1 ELSE 0 END) as fours,
     SUM(CASE WHEN b.runs_bat=6 THEN 1 ELSE 0 END) as sixes
   FROM ball_events b

@@ -10,7 +10,7 @@ $batSql = "
   SELECT p.id, p.name, t.name as team,
     COUNT(DISTINCT m.id) as matches,
     SUM(b.runs_bat) as runs,
-    COUNT(b.id) as balls,
+    COUNT(CASE WHEN COALESCE(b.extras_type, '') != 'wd' THEN 1 END) as balls,
     SUM(CASE WHEN b.runs_bat=4 THEN 1 ELSE 0 END) as fours,
     SUM(CASE WHEN b.runs_bat=6 THEN 1 ELSE 0 END) as sixes
   FROM ball_events b
@@ -125,7 +125,7 @@ $allPlayersRaw = $allStmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Helper queries for aggregates per player
 $allStatsBat = $pdo->prepare("
-    SELECT p.id, COUNT(DISTINCT m.id) as matches, SUM(b.runs_bat) as runs, COUNT(b.id) as balls,
+    SELECT p.id, COUNT(DISTINCT m.id) as matches, SUM(b.runs_bat) as runs, COUNT(CASE WHEN COALESCE(b.extras_type, '') != 'wd' THEN 1 END) as balls,
            SUM(CASE WHEN b.runs_bat=4 THEN 1 ELSE 0 END) as fours,
            SUM(CASE WHEN b.runs_bat=6 THEN 1 ELSE 0 END) as sixes
     FROM ball_events b JOIN innings i ON i.id=b.innings_id JOIN matches m ON m.id=i.match_id JOIN players p ON p.id=b.striker_id

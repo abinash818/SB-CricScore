@@ -67,7 +67,7 @@ function get_scorecard(PDO $pdo, int $innings_id) {
     $sc = ['batsmen' => [], 'bowlers' => [], 'extras' => ['total'=>0]];
     
     // BATSMEN
-    $batSql = "SELECT p.id, p.name, p.is_captain, SUM(b.runs_bat) as runs, COUNT(CASE WHEN b.extras_type != 'wd' THEN 1 END) as balls, SUM(CASE WHEN b.runs_bat=4 THEN 1 ELSE 0 END) as fours, SUM(CASE WHEN b.runs_bat=6 THEN 1 ELSE 0 END) as sixes, MAX(CASE WHEN b.is_wicket=1 AND b.wicket_player_out_id=p.id THEN b.wicket_type ELSE NULL END) as dismissal, MAX(CASE WHEN b.is_wicket=1 AND b.wicket_player_out_id=p.id THEN pb.name ELSE NULL END) as bowler_name FROM ball_events b JOIN players p ON p.id = b.striker_id LEFT JOIN players pb ON pb.id = b.bowler_id WHERE b.innings_id = ? GROUP BY p.id";
+    $batSql = "SELECT p.id, p.name, p.is_captain, SUM(b.runs_bat) as runs, COUNT(CASE WHEN COALESCE(b.extras_type, '') != 'wd' THEN 1 END) as balls, SUM(CASE WHEN b.runs_bat=4 THEN 1 ELSE 0 END) as fours, SUM(CASE WHEN b.runs_bat=6 THEN 1 ELSE 0 END) as sixes, MAX(CASE WHEN b.is_wicket=1 AND b.wicket_player_out_id=p.id THEN b.wicket_type ELSE NULL END) as dismissal, MAX(CASE WHEN b.is_wicket=1 AND b.wicket_player_out_id=p.id THEN pb.name ELSE NULL END) as bowler_name FROM ball_events b JOIN players p ON p.id = b.striker_id LEFT JOIN players pb ON pb.id = b.bowler_id WHERE b.innings_id = ? GROUP BY p.id";
     $stmt = $pdo->prepare($batSql); $stmt->execute([$innings_id]);
     foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $bat) {
         $desc = null; 
