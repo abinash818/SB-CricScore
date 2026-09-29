@@ -97,6 +97,10 @@ try {
     if (!isset($existingCols['is_final'])) {
         try {
             $pdo->exec($driver === 'sqlite' ? "ALTER TABLE matches ADD COLUMN is_final INTEGER DEFAULT 0" : "ALTER TABLE matches ADD COLUMN is_final TINYINT(1) DEFAULT 0");
+            $existingCols['is_final'] = true;
+        } catch (Throwable $e) {}
+    }
+
     $venue_name = trim($input['venue_name'] ?? ($input['ground_name'] ?? ''));
     $ball_type  = trim($input['ball_type'] ?? 'tennis_light');
     $youtube_url= trim($input['youtube_live_url'] ?? '');
