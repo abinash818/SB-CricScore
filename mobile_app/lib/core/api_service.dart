@@ -76,7 +76,16 @@ class ApiService {
     String? jerseyNumber,
     String? preferredFormat,
     String? imagePath,
+    List<int>? imageBytes,
+    String? imageName,
   }) async {
+    MultipartFile? picFile;
+    if (imageBytes != null && imageBytes.isNotEmpty) {
+      picFile = MultipartFile.fromBytes(imageBytes, filename: imageName ?? 'profile.jpg');
+    } else if (imagePath != null && imagePath.isNotEmpty) {
+      picFile = await MultipartFile.fromFile(imagePath, filename: imageName ?? 'profile.jpg');
+    }
+
     final formData = FormData.fromMap({
       'name': name,
       'city': city,
@@ -86,8 +95,7 @@ class ApiService {
       if (role != null) 'role': role,
       if (jerseyNumber != null) 'jersey_number': jerseyNumber,
       if (preferredFormat != null) 'preferred_format': preferredFormat,
-      if (imagePath != null)
-        'profile_pic': await MultipartFile.fromFile(imagePath, filename: 'profile.jpg'),
+      if (picFile != null) 'profile_pic': picFile,
     });
 
     final response = await dio.post('/profile_update.php', data: formData);

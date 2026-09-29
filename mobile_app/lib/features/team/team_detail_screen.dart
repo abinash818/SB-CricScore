@@ -146,8 +146,8 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
                           labelColor: AppTheme.gold,
                           unselectedLabelColor: Colors.white60,
                           tabs: const [
-                            Tab(icon: Icon(Icons.phone_android, size: 18), text: 'Search Phone / Name'),
-                            Tab(icon: Icon(Icons.person_add, size: 18), text: 'Register New'),
+                            Tab(icon: Icon(Icons.search, size: 18), text: 'Search Mobile / Name'),
+                            Tab(icon: Icon(Icons.person_add, size: 18), text: 'Quick Add (Manual)'),
                           ],
                         ),
                       ),
@@ -272,7 +272,9 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
                                     controller: _mobileController,
                                     keyboardType: TextInputType.phone,
                                     decoration: const InputDecoration(
-                                      labelText: 'Mobile Number (10 Digits)',
+                                      labelText: 'Mobile Number (Optional)',
+                                      hintText: 'Enter 10 digits or leave empty',
+                                      helperText: 'Optional: For searching and player verification',
                                       prefixIcon: Icon(Icons.phone, color: AppTheme.gold),
                                     ),
                                   ),

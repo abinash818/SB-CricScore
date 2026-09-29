@@ -39,6 +39,8 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
     'rubber': '⚪ Rubber Ball',
   };
 
+  List<dynamic> _myTeams = [];
+
   @override
   void initState() {
     super.initState();
@@ -47,10 +49,33 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
 
   Future<void> _fetchTeams() async {
     try {
-      final res = await _apiService.dio.get('/team_ops.php', queryParameters: {'action': 'list'});
+      final myRes = await _apiService.getMyTeams();
+      final allRes = await _apiService.dio.get('/team_ops.php', queryParameters: {'action': 'list'});
+
       if (mounted) {
         setState(() {
-          _teams = res.data['teams'] as List? ?? [];
+          _myTeams = myRes['teams'] as List? ?? [];
+          final allTeams = allRes.data['teams'] as List? ?? [];
+
+          // Merge uniquely: My Teams first, followed by other teams
+          final Map<int, dynamic> teamMap = {};
+          for (var t in _myTeams) {
+            teamMap[int.parse(t['id'].toString())] = {...t, 'is_my_team': true};
+          }
+          for (var t in allTeams) {
+            final id = int.parse(t['id'].toString());
+            if (!teamMap.containsKey(id)) {
+              teamMap[id] = {...t, 'is_my_team': false};
+            }
+          }
+
+          _teams = teamMap.values.toList();
+
+          // Auto-select user's own team for Team A if available
+          if (_myTeams.isNotEmpty && _selectedTeamA == null) {
+            _selectedTeamA = int.parse(_myTeams.first['id'].toString());
+          }
+
           _isLoading = false;
         });
       }
@@ -369,9 +394,34 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                         prefixIcon: Icon(Icons.shield_outlined, color: AppTheme.gold),
                       ),
                       items: _teams.map<DropdownMenuItem<int>>((t) {
+                        final bool isMyTeam = t['is_my_team'] == true;
                         return DropdownMenuItem<int>(
-                          value: t['id'],
-                          child: Text(t['name']),
+                          value: int.parse(t['id'].toString()),
+                          child: Row(
+                            children: [
+                              if (isMyTeam) ...[
+                                const Text('⭐ ', style: TextStyle(fontSize: 14)),
+                              ],
+                              Text(
+                                t['name'] ?? 'Team',
+                                style: TextStyle(
+                                  fontWeight: isMyTeam ? FontWeight.bold : FontWeight.normal,
+                                  color: isMyTeam ? AppTheme.gold : Colors.white,
+                                ),
+                              ),
+                              if (isMyTeam) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.gold.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text('My Team', style: TextStyle(color: AppTheme.gold, fontSize: 10, fontWeight: FontWeight.bold)),
+                                ),
+                              ],
+                            ],
+                          ),
                         );
                       }).toList(),
                       onChanged: (val) => setState(() => _selectedTeamA = val),
@@ -384,9 +434,34 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                         prefixIcon: Icon(Icons.shield, color: AppTheme.gold),
                       ),
                       items: _teams.map<DropdownMenuItem<int>>((t) {
+                        final bool isMyTeam = t['is_my_team'] == true;
                         return DropdownMenuItem<int>(
-                          value: t['id'],
-                          child: Text(t['name']),
+                          value: int.parse(t['id'].toString()),
+                          child: Row(
+                            children: [
+                              if (isMyTeam) ...[
+                                const Text('⭐ ', style: TextStyle(fontSize: 14)),
+                              ],
+                              Text(
+                                t['name'] ?? 'Team',
+                                style: TextStyle(
+                                  fontWeight: isMyTeam ? FontWeight.bold : FontWeight.normal,
+                                  color: isMyTeam ? AppTheme.gold : Colors.white,
+                                ),
+                              ),
+                              if (isMyTeam) ...[
+                                const SizedBox(width: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.gold.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text('My Team', style: TextStyle(color: AppTheme.gold, fontSize: 10, fontWeight: FontWeight.bold)),
+                                ),
+                              ],
+                            ],
+                          ),
                         );
                       }).toList(),
                       onChanged: (val) => setState(() => _selectedTeamB = val),

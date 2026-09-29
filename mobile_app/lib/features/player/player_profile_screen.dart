@@ -1,5 +1,7 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/api_service.dart';
 import '../../core/theme.dart';
 import '../auth/phone_login_screen.dart';
@@ -39,6 +41,269 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
     } catch (_) {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _showEditProfileSheet(Map<String, dynamic> player) {
+    final nameCtrl = TextEditingController(text: player['name'] ?? '');
+    final cityCtrl = TextEditingController(text: player['city'] ?? '');
+    final jerseyCtrl = TextEditingController(text: player['jersey_number']?.toString() ?? '');
+    String selectedRole = player['role'] ?? 'All-Rounder';
+    String battingStyle = player['batting_style'] ?? 'Right Hand Bat';
+    String bowlingStyle = player['bowling_style'] ?? 'Right Arm Medium';
+    XFile? pickedImage;
+    Uint8List? pickedImageBytes;
+    bool isSaving = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0F0F1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+                left: 20,
+                right: 20,
+                top: 20,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Edit Profile ✏️',
+                          style: GoogleFonts.outfit(color: AppTheme.gold, fontSize: 20, fontWeight: FontWeight.bold),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white70),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Avatar + Photo Picker
+                    Center(
+                      child: Stack(
+                        children: [
+                          CircleAvatar(
+                            radius: 46,
+                            backgroundColor: AppTheme.gold.withOpacity(0.2),
+                            backgroundImage: pickedImageBytes != null
+                                ? MemoryImage(pickedImageBytes!)
+                                : (player['profile_pic'] != null
+                                    ? NetworkImage('https://sbastro.com/tournament/${player['profile_pic']}') as ImageProvider
+                                    : null),
+                            child: (pickedImageBytes == null && player['profile_pic'] == null)
+                                ? Text(
+                                    ((player['name'] as String?) ?? 'P')[0].toUpperCase(),
+                                    style: GoogleFonts.outfit(fontSize: 32, fontWeight: FontWeight.bold, color: AppTheme.gold),
+                                  )
+                                : null,
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: InkWell(
+                              onTap: () async {
+                                final picker = ImagePicker();
+                                final img = await picker.pickImage(source: ImageSource.gallery, maxWidth: 600, maxHeight: 600, imageQuality: 80);
+                                if (img != null) {
+                                  final bytes = await img.readAsBytes();
+                                  setSheetState(() {
+                                    pickedImage = img;
+                                    pickedImageBytes = bytes;
+                                  });
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: const BoxDecoration(
+                                  color: AppTheme.gold,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.camera_alt, color: Colors.black, size: 18),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Center(
+                      child: Text('Tap camera icon to change photo 📸', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Name
+                    TextField(
+                      controller: nameCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Player Full Name *',
+                        prefixIcon: Icon(Icons.person, color: AppTheme.gold),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Role + Jersey #
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: DropdownButtonFormField<String>(
+                            value: ['All-Rounder', 'Top-order Batter', 'Middle-order Batter', 'Wicketkeeper Batter', 'Pace Bowler', 'Spin Bowler', 'BAT', 'BOWL', 'AR', 'WK'].contains(selectedRole) ? selectedRole : 'All-Rounder',
+                            decoration: const InputDecoration(labelText: 'Playing Role'),
+                            dropdownColor: const Color(0xFF131326),
+                            items: const [
+                              DropdownMenuItem(value: 'All-Rounder', child: Text('🏏 All-Rounder')),
+                              DropdownMenuItem(value: 'Top-order Batter', child: Text('🏏 Top-order Batter')),
+                              DropdownMenuItem(value: 'Middle-order Batter', child: Text('🏏 Middle-order Batter')),
+                              DropdownMenuItem(value: 'Wicketkeeper Batter', child: Text('🧤 Wicketkeeper Batter')),
+                              DropdownMenuItem(value: 'Pace Bowler', child: Text('⚡ Pace Bowler')),
+                              DropdownMenuItem(value: 'Spin Bowler', child: Text('🌀 Spin Bowler')),
+                            ],
+                            onChanged: (v) => setSheetState(() => selectedRole = v!),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 1,
+                          child: TextField(
+                            controller: jerseyCtrl,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Jersey #',
+                              prefixIcon: Icon(Icons.tag, color: AppTheme.gold),
+                              hintText: 'e.g. 7',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Batting Style
+                    DropdownButtonFormField<String>(
+                      value: ['Right Hand Bat', 'Left Hand Bat'].contains(battingStyle) ? battingStyle : 'Right Hand Bat',
+                      decoration: const InputDecoration(labelText: 'Batting Style'),
+                      dropdownColor: const Color(0xFF131326),
+                      items: const [
+                        DropdownMenuItem(value: 'Right Hand Bat', child: Text('Right Hand Bat')),
+                        DropdownMenuItem(value: 'Left Hand Bat', child: Text('Left Hand Bat')),
+                      ],
+                      onChanged: (v) => setSheetState(() => battingStyle = v!),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Bowling Style
+                    DropdownButtonFormField<String>(
+                      value: ['Right Arm Fast', 'Right Arm Medium', 'Right Arm Off Break', 'Right Arm Leg Break', 'Left Arm Fast', 'Left Arm Orthodox', 'Left Arm Chinaman'].contains(bowlingStyle) ? bowlingStyle : 'Right Arm Medium',
+                      decoration: const InputDecoration(labelText: 'Bowling Style'),
+                      dropdownColor: const Color(0xFF131326),
+                      items: const [
+                        DropdownMenuItem(value: 'Right Arm Fast', child: Text('Right Arm Fast (Pace)')),
+                        DropdownMenuItem(value: 'Right Arm Medium', child: Text('Right Arm Medium')),
+                        DropdownMenuItem(value: 'Right Arm Off Break', child: Text('Right Arm Off Break (Spin)')),
+                        DropdownMenuItem(value: 'Right Arm Leg Break', child: Text('Right Arm Leg Break (Spin)')),
+                        DropdownMenuItem(value: 'Left Arm Fast', child: Text('Left Arm Fast')),
+                        DropdownMenuItem(value: 'Left Arm Orthodox', child: Text('Left Arm Orthodox (Spin)')),
+                        DropdownMenuItem(value: 'Left Arm Chinaman', child: Text('Left Arm Chinaman (Spin)')),
+                      ],
+                      onChanged: (v) => setSheetState(() => bowlingStyle = v!),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // City / Ground
+                    TextField(
+                      controller: cityCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'City / Hometown',
+                        prefixIcon: Icon(Icons.location_city, color: AppTheme.gold),
+                        hintText: 'e.g. Coimbatore, Chennai',
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Save Button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.gold,
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: isSaving ? null : () async {
+                          final name = nameCtrl.text.trim();
+                          if (name.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Player name is required')),
+                            );
+                            return;
+                          }
+
+                          setSheetState(() => isSaving = true);
+                          try {
+                            final res = await _apiService.updateProfile(
+                              name: name,
+                              city: cityCtrl.text.trim(),
+                              role: selectedRole,
+                              jerseyNumber: jerseyCtrl.text.trim(),
+                              battingStyle: battingStyle,
+                              bowlingStyle: bowlingStyle,
+                              imagePath: pickedImage?.path,
+                              imageBytes: pickedImageBytes,
+                              imageName: pickedImage?.name,
+                            );
+
+                            if (mounted) {
+                              Navigator.pop(ctx);
+                              if (res['success'] == true) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Profile updated successfully! 🎉'), backgroundColor: Colors.green),
+                                );
+                                _fetchPlayerProfile();
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(res['message'] ?? 'Failed to update profile'), backgroundColor: Colors.redAccent),
+                                );
+                              }
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              setSheetState(() => isSaving = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Error updating profile: $e'), backgroundColor: Colors.redAccent),
+                              );
+                            }
+                          }
+                        },
+                        child: isSaving
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                            : Text(
+                                'SAVE PROFILE CHANGES 💾',
+                                style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 15),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -115,7 +380,6 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
       );
     }
 
-
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -124,6 +388,13 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
         ),
         backgroundColor: AppTheme.background,
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'Edit Profile',
+            icon: const Icon(Icons.edit_note, color: AppTheme.primaryGold, size: 28),
+            onPressed: () => _showEditProfileSheet(player),
+          ),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _fetchPlayerProfile,
@@ -144,28 +415,79 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
                 ),
                 child: Column(
                   children: [
-                    CircleAvatar(
-                      radius: 44,
-                      backgroundColor: AppTheme.primaryGold.withValues(alpha: 0.2),
-                      backgroundImage: player['profile_pic'] != null
-                          ? NetworkImage('https://sbastro.com/tournament/${player['profile_pic']}')
-                          : null,
-                      child: player['profile_pic'] == null
-                          ? Text(
-                              ((player['name'] as String?) ?? 'P')[0].toUpperCase(),
-                              style: GoogleFonts.outfit(fontSize: 32, fontWeight: FontWeight.bold, color: AppTheme.primaryGold),
-                            )
-                          : null,
+                    Stack(
+                      children: [
+                        CircleAvatar(
+                          radius: 46,
+                          backgroundColor: AppTheme.primaryGold.withValues(alpha: 0.2),
+                          backgroundImage: player['profile_pic'] != null
+                              ? NetworkImage('https://sbastro.com/tournament/${player['profile_pic']}')
+                              : null,
+                          child: player['profile_pic'] == null
+                              ? Text(
+                                  ((player['name'] as String?) ?? 'P')[0].toUpperCase(),
+                                  style: GoogleFonts.outfit(fontSize: 32, fontWeight: FontWeight.bold, color: AppTheme.primaryGold),
+                                )
+                              : null,
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: InkWell(
+                            onTap: () => _showEditProfileSheet(player),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: const BoxDecoration(
+                                color: AppTheme.primaryGold,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.camera_alt, color: Colors.black, size: 16),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 12),
-                    Text(
-                      player['name'] ?? 'Cricketer',
-                      style: GoogleFonts.outfit(fontSize: 22, fontWeight: FontWeight.bold),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          player['name'] ?? 'Cricketer',
+                          style: GoogleFonts.outfit(fontSize: 22, fontWeight: FontWeight.bold),
+                        ),
+                        if (player['jersey_number'] != null && player['jersey_number'].toString().isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primaryGold.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: AppTheme.primaryGold, width: 1),
+                            ),
+                            child: Text(
+                              '#${player['jersey_number']}',
+                              style: const TextStyle(color: AppTheme.primaryGold, fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${player['city']} • ${player['role']}',
+                      '${player['city'] ?? 'Tamil Nadu'} • ${player['role'] ?? 'All-Rounder'}',
                       style: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.primaryGold,
+                        side: const BorderSide(color: AppTheme.primaryGold),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      ),
+                      icon: const Icon(Icons.edit, size: 16),
+                      label: const Text('Edit Profile & Photo', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                      onPressed: () => _showEditProfileSheet(player),
                     ),
                     const SizedBox(height: 12),
                     Row(
