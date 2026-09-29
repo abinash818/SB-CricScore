@@ -362,5 +362,36 @@ foreach ($innings as $i) {
         $output['chase'] = ['innings_no'=>$i['innings_no'], 'target'=>$target, 'required_runs'=>$reqRuns, 'remaining_balls'=>$remBalls, 'required_rr'=>$rrr];
     }
 }
+
+// Fetch Playing XI for this match
+$xiStmt = $pdo->prepare("
+    SELECT xi.*, p.name, p.role, p.jersey_number, p.profile_pic
+    FROM match_playing_xi xi
+    JOIN players p ON p.id = xi.player_id
+    WHERE xi.match_id = ?
+    ORDER BY xi.batting_order ASC
+");
+$xiStmt->execute([$match_id]);
+$playingXI = $xiStmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Check if the current active innings has a Free Hit pending
+$activeInn = end($innings);
+$isFreeHitPending = false;
+if ($activeInn) {
+    $lastB = $pdo->prepare("SELECT extras_type FROM ball_events WHERE innings_id=? ORDER BY seq DESC LIMIT 1");
+    $lastB->execute([(int)$activeInn['id']]);
+    $lastRow = $lastB->fetch(PDO::FETCH_ASSOC);
+    if ($lastRow && $lastRow['extras_type'] === 'nb') {
+        $isFreeHitPending = true;
+    }
+}
+
+$output['playing_xi'] = $playingXI;
+$output['is_free_hit_pending'] = $isFreeHitPending;
+$output['stream'] = [
+    'youtube_url' => $match['youtube_live_url'] ?? null,
+    'is_active'   => (bool)($match['is_stream_active'] ?? 0)
+];
+
 echo json_encode($output);
 ?>

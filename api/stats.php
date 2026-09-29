@@ -7,7 +7,7 @@ if ($tid <= 0) { echo json_encode([]); exit; }
 
 // 1. Top Batsmen
 $batSql = "
-  SELECT p.id, p.name, t.name as team,
+  SELECT p.id, p.name, COALESCE(t.name, '') as team,
     COUNT(DISTINCT m.id) as matches,
     SUM(b.runs_bat) as runs,
     COUNT(CASE WHEN COALESCE(b.extras_type, '') != 'wd' THEN 1 END) as balls,
@@ -17,9 +17,9 @@ $batSql = "
   JOIN innings i ON i.id = b.innings_id
   JOIN matches m ON m.id = i.match_id
   JOIN players p ON p.id = b.striker_id
-  JOIN teams t ON t.id = p.team_id
+  LEFT JOIN teams t ON t.id = p.team_id
   WHERE m.tournament_id = ?
-  GROUP BY p.id
+  GROUP BY p.id, p.name, t.name
   HAVING p.name IS NOT NULL AND p.name != ''
   ORDER BY runs DESC LIMIT 10
 ";
@@ -34,7 +34,7 @@ unset($b); // Safety unset
 
 // 2. Top Bowlers (FIX: Added LOWER() check for run out)
 $bowlSql = "
-  SELECT p.id, p.name, t.name as team,
+  SELECT p.id, p.name, COALESCE(t.name, '') as team,
     COUNT(DISTINCT m.id) as matches,
     COUNT(CASE WHEN b.is_wicket=1 AND LOWER(b.wicket_type) != 'run out' THEN 1 END) as wickets,
     COUNT(CASE WHEN b.is_legal=1 THEN 1 END) as legal_balls,
@@ -44,9 +44,9 @@ $bowlSql = "
   JOIN innings i ON i.id = b.innings_id
   JOIN matches m ON m.id = i.match_id
   JOIN players p ON p.id = b.bowler_id
-  JOIN teams t ON t.id = p.team_id
+  LEFT JOIN teams t ON t.id = p.team_id
   WHERE m.tournament_id = ?
-  GROUP BY p.id
+  GROUP BY p.id, p.name, t.name
   HAVING p.name IS NOT NULL AND p.name != ''
   ORDER BY wickets DESC, runs_conceded ASC LIMIT 10
 ";
@@ -65,7 +65,7 @@ $threesSql = "
     WHERE m.tournament_id = ? AND b.is_wicket=1 AND LOWER(b.wicket_type) != 'run out'
     GROUP BY m.id, b.bowler_id
     HAVING w >= 3
-  )
+  ) sub
   GROUP BY bowler_id
 ";
 $threesStmt = $pdo->prepare($threesSql);
@@ -81,15 +81,15 @@ unset($b);
 
 // 3. Highest Sixes
 $sixSql = "
-  SELECT p.id, p.name, t.name as team, SUM(CASE WHEN b.runs_bat=6 THEN 1 ELSE 0 END) as count
+  SELECT p.id, p.name, COALESCE(t.name, '') as team, SUM(CASE WHEN b.runs_bat=6 THEN 1 ELSE 0 END) as count
   FROM ball_events b
   JOIN innings i ON i.id = b.innings_id
   JOIN matches m ON m.id = i.match_id
   JOIN players p ON p.id = b.striker_id
-  JOIN teams t ON t.id = p.team_id
+  LEFT JOIN teams t ON t.id = p.team_id
   WHERE m.tournament_id = ?
-  GROUP BY p.id
-  HAVING count > 0 AND p.name IS NOT NULL
+  GROUP BY p.id, p.name, t.name
+  HAVING count > 0 AND p.name IS NOT NULL AND p.name != ''
   ORDER BY count DESC LIMIT 5
 ";
 $sixStmt = $pdo->prepare($sixSql);
@@ -97,15 +97,15 @@ $sixStmt->execute([$tid]);
 
 // 4. Highest Fours
 $fourSql = "
-  SELECT p.id, p.name, t.name as team, SUM(CASE WHEN b.runs_bat=4 THEN 1 ELSE 0 END) as count
+  SELECT p.id, p.name, COALESCE(t.name, '') as team, SUM(CASE WHEN b.runs_bat=4 THEN 1 ELSE 0 END) as count
   FROM ball_events b
   JOIN innings i ON i.id = b.innings_id
   JOIN matches m ON m.id = i.match_id
   JOIN players p ON p.id = b.striker_id
-  JOIN teams t ON t.id = p.team_id
+  LEFT JOIN teams t ON t.id = p.team_id
   WHERE m.tournament_id = ?
-  GROUP BY p.id
-  HAVING count > 0 AND p.name IS NOT NULL
+  GROUP BY p.id, p.name, t.name
+  HAVING count > 0 AND p.name IS NOT NULL AND p.name != ''
   ORDER BY count DESC LIMIT 5
 ";
 $fourStmt = $pdo->prepare($fourSql);
@@ -179,11 +179,22 @@ foreach($allPlayersRaw as $p) {
     ];
 }
 
+// 6. MVP / Impact Points Calculation
+$mvpList = $finalList;
+foreach ($mvpList as &$p) {
+    $p['points'] = ($p['runs'] * 1) + ($p['sixes'] * 2) + ($p['fours'] * 1) + ($p['wickets'] * 25) + ($p['dots'] * 1);
+}
+unset($p);
+usort($mvpList, fn($x, $y) => $y['points'] <=> $x['points']);
+$mvpTop = array_slice($mvpList, 0, 10);
+
 echo json_encode([
-  'batsmen' => $batsmen,
-  'bowlers' => $bowlers,
+  'success'    => true,
+  'batsmen'    => $batsmen,
+  'bowlers'    => $bowlers,
   'most_sixes' => $sixStmt->fetchAll(PDO::FETCH_ASSOC),
   'most_fours' => $fourStmt->fetchAll(PDO::FETCH_ASSOC),
-  'all_players' => $finalList
+  'mvp'        => $mvpTop,
+  'all_players'=> $finalList
 ]);
 ?>

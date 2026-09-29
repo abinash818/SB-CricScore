@@ -61,5 +61,19 @@ try {
         $pdo->exec('PRAGMA synchronous = FULL;');
     }
 } catch (PDOException $e) {
-    die("Database Connection Error: " . htmlspecialchars($e->getMessage()));
+    if ($driver === 'mysql') {
+        // Fallback to SQLite for local development if MySQL is unreachable
+        try {
+            $sqlitePath = __DIR__ . '/cric.db';
+            $pdo = new PDO('sqlite:' . $sqlitePath);
+            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+            $pdo->exec('PRAGMA foreign_keys = ON;');
+            $driver = 'sqlite';
+        } catch (Exception $sqe) {
+            die("Database Connection Error: " . htmlspecialchars($e->getMessage()));
+        }
+    } else {
+        die("Database Connection Error: " . htmlspecialchars($e->getMessage()));
+    }
 }

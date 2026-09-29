@@ -511,6 +511,7 @@ if (empty($groupAMatches) && empty($groupBMatches) && !empty($matches)) {
     <div class="right-actions">
       <a class="chip" href="../index.php"><span class="material-symbols-outlined" style="font-size:16px;">home</span> Home</a>
       <a class="chip" href="points.php?id=<?= $id ?>"><span class="material-symbols-outlined" style="font-size:16px;">leaderboard</span> Points Table</a>
+      <a class="chip" href="#fixtures-anchor" onclick="switchFixtureView('bracket'); document.getElementById('fixtures-anchor')?.scrollIntoView({behavior:'smooth'}); return false;"><span class="material-symbols-outlined" style="font-size:16px;">account_tree</span> Bracket Tree</a>
       <?php if ($user): ?>
         <a class="chip" href="#" onclick="doLogout()"><span class="material-symbols-outlined" style="font-size:16px;">logout</span> Logout</a>
       <?php else: ?>
@@ -530,8 +531,11 @@ if (empty($groupAMatches) && empty($groupBMatches) && !empty($matches)) {
       <?php endif; ?>
     </div>
     
-    <?php if ($user): ?>
-    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+      <button type="button" class="btn-secondary" onclick="switchFixtureView('bracket'); document.getElementById('fixtures-anchor')?.scrollIntoView({behavior:'smooth'});" style="display:inline-flex; align-items:center; gap:6px; background:rgba(223,186,115,0.15); border:1px solid var(--gold-primary); color:var(--gold-light); font-weight:800; padding:9px 15px; border-radius:8px;">
+        <span class="material-symbols-outlined" style="font-size:18px; color:var(--gold-primary);">account_tree</span> 🌳 Bracket Tree
+      </button>
+      <?php if ($user): ?>
       <a class="btn" href="register_player.php?tournament_id=<?= $id ?>">
         <span class="material-symbols-outlined" style="font-size:18px;">person_add</span> Register Player
       </a>
@@ -541,8 +545,8 @@ if (empty($groupAMatches) && empty($groupBMatches) && !empty($matches)) {
       <button type="button" class="danger" onclick="deleteTournament()">
         <span class="material-symbols-outlined" style="font-size:18px;">delete</span> Delete
       </button>
+      <?php endif; ?>
     </div>
-    <?php endif; ?>
   </div>
 
   <!-- Stats Leaderboard Card -->
@@ -722,15 +726,15 @@ if (empty($groupAMatches) && empty($groupBMatches) && !empty($matches)) {
     </div>
 
     <!-- Column 2: Fixtures & Matches -->
-    <div class="card">
+    <div class="card" id="fixtures-anchor">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; flex-wrap:wrap; gap:10px;">
         <h2>Fixtures & Matches (<?= count($matches) ?>)</h2>
-        <div class="view-toggle" style="display:flex; background:#181830; border:1px solid rgba(223,186,115,0.3); border-radius:8px; padding:3px;">
-          <button type="button" id="btn-view-list" class="chip active" onclick="switchFixtureView('list')" style="border:none; cursor:pointer; font-size:12px; font-weight:700;">
+        <div class="view-toggle" style="display:flex; background:#181830; border:1px solid rgba(223,186,115,0.4); border-radius:10px; padding:3px; gap:4px;">
+          <button type="button" id="btn-view-list" class="chip active" onclick="switchFixtureView('list')" style="border:none; cursor:pointer; font-size:12.5px; font-weight:800; padding:6px 14px; border-radius:6px;">
             <span class="material-symbols-outlined" style="font-size:15px;">list</span> List View
           </button>
-          <button type="button" id="btn-view-bracket" class="chip" onclick="switchFixtureView('bracket')" style="border:none; cursor:pointer; font-size:12px; font-weight:700; background:transparent; color:#cbd5e1;">
-            <span class="material-symbols-outlined" style="font-size:15px;">account_tree</span> Bracket Tree
+          <button type="button" id="btn-view-bracket" class="chip" onclick="switchFixtureView('bracket')" style="border:none; cursor:pointer; font-size:12.5px; font-weight:800; padding:6px 14px; border-radius:6px; background:transparent; color:#cbd5e1;">
+            <span class="material-symbols-outlined" style="font-size:15px;">account_tree</span> 🌳 Bracket Tree
           </button>
         </div>
       </div>
@@ -1191,6 +1195,13 @@ async function generateFixtures(){
 }
 async function deleteMatch(mid){ if(confirm("Delete match?")) { const fd=new FormData(); fd.append('match_id',mid); await fetch('../api/match_delete.php',{method:'POST',body:fd}); location.reload(); }}
 async function deleteTournament(){ if(confirm("Delete Tournament?")) { const fd=new FormData(); fd.append('tournament_id',<?= $id ?>); await fetch('../api/tournament_delete.php',{method:'POST',body:fd}); location.href='../index.php'; }}
+
+window.addEventListener('DOMContentLoaded', () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('view') === 'bracket' || window.location.hash === '#fixtures-anchor' || window.location.hash === '#bracket-tree') {
+        switchFixtureView('bracket');
+    }
+});
 
 loadStats();
 </script>
