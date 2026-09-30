@@ -36,7 +36,16 @@ if ($team_id <= 0 || empty($name)) {
     exit;
 }
 
-// Mobile format validation if provided
+// Mobile format sanitization and normalization
+if (!empty($mobile)) {
+    $digits = preg_replace('/\D+/', '', $mobile);
+    if (strlen($digits) >= 10) {
+        $mobile = substr($digits, -10);
+    } else {
+        $mobile = $digits;
+    }
+}
+
 if (!empty($mobile) && !preg_match('/^[6-9]\d{9}$/', $mobile)) {
     http_response_code(400);
     echo json_encode(['success' => false, 'message' => 'Invalid 10-digit Indian mobile number.']);
@@ -60,12 +69,12 @@ if (!empty($mobile) && !$skip_otp) {
     $otpStmt = $pdo->prepare("
         SELECT id, otp, attempts, expires_at
         FROM mobile_otps
-        WHERE mobile = ? AND verified = 0
+        WHERE (mobile = ? OR mobile = ?) AND verified = 0
           AND expires_at >= ?
         ORDER BY id DESC
         LIMIT 1
     ");
-    $otpStmt->execute([$mobile, $now]);
+    $otpStmt->execute([$mobile, '+91' . $mobile, $now]);
     $otpRow = $otpStmt->fetch();
 
     if (!$otpRow) {
@@ -94,13 +103,29 @@ try {
         exit;
     }
 
+    // Inherit photo and details from app_users if available
+    $profilePic = null;
+    if (!empty($mobile)) {
+        try {
+            $uStmt = $pdo->prepare("SELECT profile_pic, name, role, batting_style, bowling_style, jersey_number FROM app_users WHERE mobile = ? OR mobile = ?");
+            $uStmt->execute([$mobile, '+91' . $mobile]);
+            $uRow = $uStmt->fetch(PDO::FETCH_ASSOC);
+            if ($uRow) {
+                if (!empty($uRow['profile_pic'])) $profilePic = $uRow['profile_pic'];
+                if (empty($name) || $name === 'Player') $name = $uRow['name'];
+                if (empty($jersey_number) && !empty($uRow['jersey_number'])) $jersey_number = $uRow['jersey_number'];
+            }
+        } catch (\Throwable $e) {}
+    }
+
     // 4. Insert Player into Squad
     $insStmt = $pdo->prepare("
-        INSERT INTO players (team_id, name, role, jersey_number, mobile, batting_style, bowling_style, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        INSERT INTO players (team_id, name, role, jersey_number, mobile, batting_style, bowling_style, profile_pic, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ");
-    $insStmt->execute([$team_id, $name, $role, $jersey_number, $mobile, $batting_style, $bowling_style]);
+    $insStmt->execute([$team_id, $name, $role, $jersey_number, $mobile, $batting_style, $bowling_style, $profilePic]);
     $playerId = (int)$pdo->lastInsertId();
+
 
     // 5. If mobile given, ensure user record exists
     if (!empty($mobile)) {

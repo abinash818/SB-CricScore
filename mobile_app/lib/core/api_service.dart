@@ -17,6 +17,14 @@ class ApiService {
 
   final FlutterSecureStorage storage = const FlutterSecureStorage();
 
+  static String getImageUrl(String? path) {
+    if (path == null || path.isEmpty) return '';
+    if (path.startsWith('http://') || path.startsWith('https://')) return path;
+    final root = baseUrl.replaceAll('/api', '');
+    final cleanPath = path.startsWith('/') ? path.substring(1) : path;
+    return '$root/$cleanPath';
+  }
+
   ApiService() {
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
@@ -296,6 +304,13 @@ class ApiService {
     String icon = 'shield',
     int? ownerId,
     int? tournamentId,
+    bool addCaptain = true,
+    String? creatorName,
+    String? creatorMobile,
+    String? creatorRole,
+    String? creatorBattingStyle,
+    String? creatorBowlingStyle,
+    String? creatorJersey,
   }) async {
     final response = await dio.post('/team_ops.php?action=create_user_team', data: {
       'name': name,
@@ -304,6 +319,13 @@ class ApiService {
       'icon': icon,
       if (ownerId != null) 'owner_id': ownerId,
       if (tournamentId != null) 'tournament_id': tournamentId,
+      'add_captain': addCaptain,
+      if (creatorName != null) 'creator_name': creatorName,
+      if (creatorMobile != null) 'creator_mobile': creatorMobile,
+      if (creatorRole != null) 'creator_role': creatorRole,
+      if (creatorBattingStyle != null) 'creator_batting_style': creatorBattingStyle,
+      if (creatorBowlingStyle != null) 'creator_bowling_style': creatorBowlingStyle,
+      if (creatorJersey != null) 'creator_jersey': creatorJersey,
     });
     return response.data;
   }
@@ -346,6 +368,24 @@ class ApiService {
       if (matchCode != null) 'match_code': matchCode,
       if (matchId != null) 'match_id': matchId,
       if (playerIds != null) 'player_ids': playerIds,
+    });
+    return response.data;
+  }
+
+  // ── Set Captain ──
+  Future<Map<String, dynamic>> setCaptain(int teamId, int playerId) async {
+    final response = await dio.post('/team_ops.php?action=set_captain', data: {
+      'team_id': teamId,
+      'player_id': playerId,
+    });
+    return response.data;
+  }
+
+  // ── Remove Player from Squad ──
+  Future<Map<String, dynamic>> removePlayer(int teamId, int playerId) async {
+    final response = await dio.post('/team_ops.php?action=remove_player', data: {
+      'team_id': teamId,
+      'player_id': playerId,
     });
     return response.data;
   }

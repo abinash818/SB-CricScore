@@ -134,6 +134,55 @@ $stmt->execute([
     $userId
 ]);
 
+// ── Sync with players table (tournaments squads & scorecards) ──
+try {
+    if (!empty($user['mobile'])) {
+        $pUp = $pdo->prepare("
+            UPDATE players SET
+                name = ?,
+                role = ?,
+                jersey_number = ?,
+                batting_style = ?,
+                bowling_style = ?,
+                profile_pic = COALESCE(?, profile_pic)
+            WHERE mobile = ?
+        ");
+        $pUp->execute([
+            $name,
+            $role,
+            $jersey_number,
+            $batting_style,
+            $bowling_style,
+            $profilePicPath,
+            $user['mobile']
+        ]);
+    }
+
+    if (!empty($user['name']) && $user['name'] !== $name) {
+        $pUpName = $pdo->prepare("
+            UPDATE players SET
+                name = ?,
+                role = ?,
+                jersey_number = ?,
+                batting_style = ?,
+                bowling_style = ?,
+                profile_pic = COALESCE(?, profile_pic)
+            WHERE name = ?
+        ");
+        $pUpName->execute([
+            $name,
+            $role,
+            $jersey_number,
+            $batting_style,
+            $bowling_style,
+            $profilePicPath,
+            $user['name']
+        ]);
+    }
+} catch (\Throwable $e) {
+    // Ignore minor sync errors
+}
+
 // Fetch updated user details
 $fetchStmt = $pdo->prepare("SELECT * FROM app_users WHERE id = ?");
 $fetchStmt->execute([$userId]);
@@ -158,3 +207,4 @@ echo json_encode([
         'profile_complete' => (int)$updatedUser['profile_complete'],
     ]
 ]);
+

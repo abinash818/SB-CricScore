@@ -130,7 +130,50 @@ if ($driver === 'sqlite') {
     );
     CREATE INDEX IF NOT EXISTS idx_playing_xi_match ON match_playing_xi(match_id);
     CREATE INDEX IF NOT EXISTS idx_playing_xi_team ON match_playing_xi(team_id);
+
+    CREATE TABLE IF NOT EXISTS app_users (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      mobile       TEXT NOT NULL UNIQUE,
+      name         TEXT DEFAULT NULL,
+      dob          TEXT DEFAULT NULL,
+      city         TEXT DEFAULT NULL,
+      profile_pic  TEXT DEFAULT NULL,
+      batting_style TEXT DEFAULT 'Right Hand Bat',
+      bowling_style TEXT DEFAULT 'Right Arm Medium',
+      role          TEXT DEFAULT 'All-Rounder',
+      jersey_number TEXT DEFAULT NULL,
+      preferred_format TEXT DEFAULT NULL,
+      fcm_token    TEXT DEFAULT NULL,
+      language     TEXT DEFAULT 'en',
+      is_blocked   INTEGER DEFAULT 0,
+      profile_complete INTEGER DEFAULT 0,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      last_login   TEXT DEFAULT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_app_users_mobile ON app_users(mobile);
+
+    CREATE TABLE IF NOT EXISTS mobile_otps (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      mobile    TEXT NOT NULL,
+      otp       TEXT NOT NULL,
+      attempts  INTEGER NOT NULL DEFAULT 0,
+      expires_at TEXT NOT NULL,
+      verified  INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_otps_mobile ON mobile_otps(mobile);
+
+    CREATE TABLE IF NOT EXISTS api_tokens (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL,
+      token      TEXT NOT NULL UNIQUE,
+      expires_at TEXT DEFAULT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_tokens_token ON api_tokens(token);
+    CREATE INDEX IF NOT EXISTS idx_tokens_user ON api_tokens(user_id);
     ");
+
 
     // Auto-upgrade existing SQLite tables with new columns if missing
     $pCols = $pdo->query("PRAGMA table_info(players)")->fetchAll(PDO::FETCH_COLUMN, 1);
@@ -369,9 +412,50 @@ if ($driver === 'sqlite') {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         ");
 
-        $xiCols = $pdo->query("SHOW COLUMNS FROM match_playing_xi")->fetchAll(PDO::FETCH_COLUMN);
-        if (!in_array('is_substitute', $xiCols)) $pdo->exec("ALTER TABLE match_playing_xi ADD COLUMN is_substitute TINYINT(1) DEFAULT 0");
+        $pdo->exec("
+        CREATE TABLE IF NOT EXISTS app_users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            mobile VARCHAR(15) NOT NULL UNIQUE,
+            name VARCHAR(100) DEFAULT NULL,
+            dob DATE DEFAULT NULL,
+            city VARCHAR(100) DEFAULT NULL,
+            profile_pic VARCHAR(255) DEFAULT NULL,
+            batting_style VARCHAR(50) DEFAULT 'Right Hand Bat',
+            bowling_style VARCHAR(50) DEFAULT 'Right Arm Medium',
+            role VARCHAR(50) DEFAULT 'All-Rounder',
+            jersey_number VARCHAR(10) DEFAULT NULL,
+            preferred_format VARCHAR(20) DEFAULT NULL,
+            fcm_token VARCHAR(255) DEFAULT NULL,
+            language VARCHAR(10) DEFAULT 'en',
+            is_blocked TINYINT(1) DEFAULT 0,
+            profile_complete TINYINT(1) DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_login DATETIME DEFAULT NULL,
+            UNIQUE KEY uq_app_users_mob (mobile)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+        CREATE TABLE IF NOT EXISTS mobile_otps (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            mobile VARCHAR(15) NOT NULL,
+            otp VARCHAR(10) NOT NULL,
+            attempts TINYINT NOT NULL DEFAULT 0,
+            expires_at DATETIME NOT NULL,
+            verified TINYINT(1) NOT NULL DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_otps_mobile (mobile)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+        CREATE TABLE IF NOT EXISTS api_tokens (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            token VARCHAR(255) NOT NULL UNIQUE,
+            expires_at DATETIME DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_tokens_user (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+        ");
     } catch (Exception $e) {}
+
 }
 
 // Admin user setup

@@ -246,7 +246,7 @@ if ($action === 'check_name') {
     exit;
 }
 
-// ── 7. CREATE USER TEAM (Mobile App Self-Service) ───────────────────────────
+// ── 7. CREATE USER TEAM (Mobile App Self-Service with Auto Captain) ─────────
 if ($action === 'create_user_team') {
     $input     = json_decode(file_get_contents('php://input'), true) ?? $_POST;
     $name      = trim($input['name'] ?? '');
@@ -255,6 +255,24 @@ if ($action === 'create_user_team') {
     $icon      = trim($input['icon'] ?? 'shield');
     $ownerId   = (int)($input['owner_id'] ?? 0);
     $tournId   = (int)($input['tournament_id'] ?? 1);
+
+    // Creator / Captain fields
+    $addCaptain      = isset($input['add_captain']) ? (bool)$input['add_captain'] : true;
+    $creatorName     = trim($input['creator_name'] ?? '');
+    $creatorMobile   = trim($input['creator_mobile'] ?? '');
+    $creatorRole     = trim($input['creator_role'] ?? 'All-Rounder');
+    $creatorBatStyle = trim($input['creator_batting_style'] ?? 'Right Hand Bat');
+    $creatorBowlStyle= trim($input['creator_bowling_style'] ?? 'Right Arm Medium');
+    $creatorJersey   = trim($input['creator_jersey'] ?? '7');
+    $creatorPhoto    = trim($input['creator_profile_pic'] ?? '');
+
+    $currentUser = app_optional_auth($pdo);
+    if ($currentUser) {
+        if ($ownerId <= 0) $ownerId = (int)$currentUser['id'];
+        if (empty($creatorName)) $creatorName = $currentUser['name'] ?? '';
+        if (empty($creatorMobile)) $creatorMobile = $currentUser['phone'] ?? '';
+        if (empty($creatorPhoto) && !empty($currentUser['profile_pic'])) $creatorPhoto = $currentUser['profile_pic'];
+    }
 
     if (empty($name)) {
         http_response_code(400);
@@ -284,14 +302,37 @@ if ($action === 'create_user_team') {
         $stmt->execute([$tournId, $name, $shortName, $city, $icon, ($ownerId > 0 ? $ownerId : null)]);
         $teamId = (int)$pdo->lastInsertId();
 
+        // Automatically add Creator as Captain in Squad if enabled or creator info available
+        $captainPlayerId = 0;
+        if ($addCaptain && (!empty($creatorName) || !empty($creatorMobile))) {
+            $captainName = !empty($creatorName) ? $creatorName : 'Team Captain';
+            
+            $pStmt = $pdo->prepare("
+                INSERT INTO players (team_id, name, role, jersey_number, is_captain, mobile, batting_style, bowling_style, profile_pic)
+                VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
+            ");
+            $pStmt->execute([
+                $teamId,
+                $captainName,
+                $creatorRole,
+                $creatorJersey,
+                $creatorMobile,
+                $creatorBatStyle,
+                $creatorBowlStyle,
+                !empty($creatorPhoto) ? $creatorPhoto : null
+            ]);
+            $captainPlayerId = (int)$pdo->lastInsertId();
+        }
+
         echo json_encode([
-            'success'    => true,
-            'message'    => "Team '{$name}' created successfully! 🚀",
-            'team_id'    => $teamId,
-            'name'       => $name,
-            'short_name' => $shortName,
-            'city'       => $city,
-            'icon'       => $icon
+            'success'           => true,
+            'message'           => "Team '{$name}' created with you as Captain / Owner! 🚀",
+            'team_id'           => $teamId,
+            'name'              => $name,
+            'short_name'        => $shortName,
+            'city'              => $city,
+            'icon'              => $icon,
+            'captain_player_id' => $captainPlayerId,
         ]);
     } catch (Exception $e) {
         http_response_code(500);
@@ -372,19 +413,135 @@ if ($action === 'search_players') {
         exit;
     }
 
-    $like = '%' . strtolower($q) . '%';
-    $stmt = $pdo->prepare("
-        SELECT p.id, p.name, p.mobile, p.role, p.batting_style, p.bowling_style, p.jersey_number, p.profile_pic,
-               t.id as team_id, t.name as team_name
-        FROM players p
-        LEFT JOIN teams t ON t.id = p.team_id
-        WHERE LOWER(p.name) LIKE ? OR p.mobile LIKE ?
-        ORDER BY p.name ASC LIMIT 20
-    ");
-    $stmt->execute([$like, $like]);
-    $players = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $rawQ = $q;
+    // Extract pure digits for mobile number search
+    $digitsOnly = preg_replace('/\D+/', '', $q);
+    $last10 = (strlen($digitsOnly) >= 10) ? substr($digitsOnly, -10) : $digitsOnly;
 
-    echo json_encode(['success' => true, 'query' => $q, 'players' => $players]);
+    $likeName = '%' . strtolower($rawQ) . '%';
+    $likeMobile = !empty($last10) ? '%' . $last10 . '%' : '%' . $rawQ . '%';
+
+    $playersList = [];
+    $seenMobiles = [];
+    $seenNames = [];
+
+    // 1. First, search registered App Users (app_users table)
+    try {
+        $uStmt = $pdo->prepare("
+            SELECT id, name, mobile, role, batting_style, bowling_style, jersey_number, profile_pic, city
+            FROM app_users
+            WHERE LOWER(name) LIKE ? OR mobile LIKE ?
+            ORDER BY id DESC LIMIT 20
+        ");
+        $uStmt->execute([$likeName, $likeMobile]);
+        $appUsers = $uStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($appUsers as $u) {
+            $mob = trim($u['mobile'] ?? '');
+            $nm = trim($u['name'] ?? '');
+            if (!empty($mob)) $seenMobiles[$mob] = true;
+            if (!empty($nm)) $seenNames[strtolower($nm)] = true;
+
+            $playersList[] = [
+                'id'            => (int)$u['id'],
+                'name'          => !empty($u['name']) ? $u['name'] : 'Player (' . $mob . ')',
+                'mobile'        => $mob,
+                'role'          => !empty($u['role']) ? $u['role'] : 'All-Rounder',
+                'batting_style' => !empty($u['batting_style']) ? $u['batting_style'] : 'Right Hand Bat',
+                'bowling_style' => !empty($u['bowling_style']) ? $u['bowling_style'] : 'Right Arm Medium',
+                'jersey_number' => $u['jersey_number'] ?? '',
+                'profile_pic'   => $u['profile_pic'] ?? null,
+                'city'          => $u['city'] ?? '',
+                'team_name'     => 'Registered User ⭐',
+                'source'        => 'app_user',
+            ];
+        }
+    } catch (\Throwable $e) {
+        // Table might not exist or query error, continue
+    }
+
+    // 2. Next, search Tournament Players (players table)
+    try {
+        $pStmt = $pdo->prepare("
+            SELECT p.id, p.name, p.mobile, p.role, p.batting_style, p.bowling_style, p.jersey_number, p.profile_pic,
+                   t.id as team_id, t.name as team_name
+            FROM players p
+            LEFT JOIN teams t ON t.id = p.team_id
+            WHERE LOWER(p.name) LIKE ? OR p.mobile LIKE ?
+            ORDER BY p.id DESC LIMIT 20
+        ");
+        $pStmt->execute([$likeName, $likeMobile]);
+        $tournamentPlayers = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($tournamentPlayers as $p) {
+            $mob = trim($p['mobile'] ?? '');
+            $nm = trim($p['name'] ?? '');
+
+            // If already added from app_users, skip duplicate
+            if (!empty($mob) && isset($seenMobiles[$mob])) continue;
+            if (empty($mob) && !empty($nm) && isset($seenNames[strtolower($nm)])) continue;
+
+            if (!empty($mob)) $seenMobiles[$mob] = true;
+            if (!empty($nm)) $seenNames[strtolower($nm)] = true;
+
+            $playersList[] = [
+                'id'            => (int)$p['id'],
+                'name'          => $p['name'],
+                'mobile'        => $mob,
+                'role'          => !empty($p['role']) ? $p['role'] : 'BAT',
+                'batting_style' => !empty($p['batting_style']) ? $p['batting_style'] : 'Right Hand Bat',
+                'bowling_style' => !empty($p['bowling_style']) ? $p['bowling_style'] : 'Right Arm Medium',
+                'jersey_number' => $p['jersey_number'] ?? '',
+                'profile_pic'   => $p['profile_pic'] ?? null,
+                'team_name'     => $p['team_name'] ?? '',
+                'source'        => 'tournament_player',
+            ];
+        }
+    } catch (\Throwable $e) {
+        // Continue
+    }
+
+    echo json_encode(['success' => true, 'query' => $q, 'players' => $playersList]);
+    exit;
+}
+
+
+// ── 10. SET CAPTAIN ─────────────────────────────────────────────────────────
+if ($action === 'set_captain') {
+    $input    = json_decode(file_get_contents('php://input'), true) ?? $_POST;
+    $teamId   = (int)($input['team_id'] ?? 0);
+    $playerId = (int)($input['player_id'] ?? 0);
+
+    if ($teamId <= 0 || $playerId <= 0) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'team_id and player_id are required']);
+        exit;
+    }
+
+    $pdo->prepare("UPDATE players SET is_captain = 0 WHERE team_id = ?")->execute([$teamId]);
+    $stmt = $pdo->prepare("UPDATE players SET is_captain = 1 WHERE id = ? AND team_id = ?");
+    $stmt->execute([$playerId, $teamId]);
+
+    echo json_encode(['success' => true, 'message' => 'Captain updated successfully! 👑']);
+    exit;
+}
+
+// ── 11. REMOVE PLAYER FROM SQUAD ────────────────────────────────────────────
+if ($action === 'remove_player') {
+    $input    = json_decode(file_get_contents('php://input'), true) ?? $_POST;
+    $teamId   = (int)($input['team_id'] ?? 0);
+    $playerId = (int)($input['player_id'] ?? 0);
+
+    if ($teamId <= 0 || $playerId <= 0) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'team_id and player_id are required']);
+        exit;
+    }
+
+    $stmt = $pdo->prepare("DELETE FROM players WHERE id = ? AND team_id = ?");
+    $stmt->execute([$playerId, $teamId]);
+
+    echo json_encode(['success' => true, 'message' => 'Player removed from squad']);
     exit;
 }
 

@@ -427,6 +427,53 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
     }
   }
 
+  Future<void> _handleSetCaptain(int playerId, String playerName) async {
+    try {
+      final res = await _apiService.setCaptain(widget.teamId, playerId);
+      if (mounted) {
+        if (res['success'] == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$playerName is now the Captain! 👑'), backgroundColor: Colors.green),
+          );
+          _fetchTeamSquad();
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _handleRemovePlayer(int playerId, String playerName) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF131326),
+        title: Text('Remove Player?', style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: Text('Are you sure you want to remove $playerName from this squad?', style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel', style: TextStyle(color: Colors.white60))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.errorRed),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        final res = await _apiService.removePlayer(widget.teamId, playerId);
+        if (mounted) {
+          if (res['success'] == true) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('$playerName removed from squad'), backgroundColor: Colors.orangeAccent),
+            );
+            _fetchTeamSquad();
+          }
+        }
+      } catch (_) {}
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -435,11 +482,15 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
       );
     }
 
+    final teamName = _team?['name'] ?? 'Team Squad';
+    final tournId = _team?['tournament_id'] ?? 1;
+    final inviteLink = 'https://sbastro.com/tournament/pages/register_player.php?team_id=${widget.teamId}&tour_id=$tournId';
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         title: Text(
-          _team?['name'] ?? 'Team Squad',
+          teamName,
           style: GoogleFonts.outfit(color: AppTheme.gold, fontWeight: FontWeight.bold),
         ),
         backgroundColor: AppTheme.cardBackground,
@@ -465,34 +516,66 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
               decoration: BoxDecoration(
                 color: AppTheme.cardBackground,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppTheme.gold.withOpacity(0.3)),
+                border: Border.all(color: AppTheme.gold.withValues(alpha: 0.3)),
               ),
-              child: Row(
+              child: Column(
                 children: [
-                  CircleAvatar(
-                    radius: 30,
-                    backgroundColor: AppTheme.gold.withOpacity(0.2),
-                    child: const Icon(Icons.shield, color: AppTheme.gold, size: 36),
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 28,
+                        backgroundColor: AppTheme.gold.withValues(alpha: 0.2),
+                        child: const Icon(Icons.shield, color: AppTheme.gold, size: 32),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              teamName,
+                              style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                            Text(
+                              '${_team?['short_name'] ?? 'TEAM'} • ${_team?['city'] ?? 'Tamil Nadu'}',
+                              style: const TextStyle(color: Colors.white60, fontSize: 13),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Squad Size: ${_squad.length} Players',
+                              style: const TextStyle(color: AppTheme.gold, fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _team?['name'] ?? 'Team',
-                          style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
-                        ),
-                        Text(
-                          '${_team?['short_name'] ?? 'TEAM'} • ${_team?['city'] ?? 'Tamil Nadu'}',
-                          style: const TextStyle(color: Colors.white60, fontSize: 13),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Squad Size: ${_squad.length} Players (Unlimited)',
-                          style: const TextStyle(color: AppTheme.gold, fontWeight: FontWeight.bold, fontSize: 13),
-                        ),
-                      ],
+                  const SizedBox(height: 14),
+                  // Share WhatsApp Registration Link Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF25D366),
+                        side: const BorderSide(color: Color(0xFF25D366)),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.share, size: 18),
+                      label: const Text(
+                        'SHARE SQUAD REGISTRATION LINK 📲',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                      ),
+                      onPressed: () {
+                        final shareText = '🏏 Join our team *$teamName* on SB CricScore!\n\nRegister yourself into our squad with your photo here:\n$inviteLink';
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Registration Link Copied!\n$shareText'),
+                            action: SnackBarAction(label: 'OK', textColor: Colors.white, onPressed: () {}),
+                            backgroundColor: const Color(0xFF25D366),
+                          ),
+                        );
+                      },
                     ),
                   ),
                 ],
@@ -500,11 +583,22 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
             ),
             const SizedBox(height: 20),
 
-            Text(
-              'Squad Players (${_squad.length})',
-              style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Squad Players (${_squad.length})',
+                  style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+                TextButton.icon(
+                  style: TextButton.styleFrom(foregroundColor: AppTheme.gold),
+                  icon: const Icon(Icons.add, size: 16),
+                  label: const Text('Add Player', style: TextStyle(fontWeight: FontWeight.bold)),
+                  onPressed: _showAddPlayerSheet,
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
 
             if (_squad.isEmpty)
               Container(
@@ -515,7 +609,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
                     const Icon(Icons.group_outlined, size: 48, color: Colors.white24),
                     const SizedBox(height: 12),
                     Text(
-                      'No players added yet.\nTap "ADD PLAYER" to search by mobile or register players!',
+                      'No players in squad yet.\nTap "ADD PLAYER" to search or register players!',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.outfit(color: Colors.white54),
                     ),
@@ -529,11 +623,14 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
                 itemCount: _squad.length,
                 itemBuilder: (context, index) {
                   final player = _squad[index];
-                  final isCapt = (player['is_captain'] == 1);
+                  final isCapt = (player['is_captain'] == 1 || player['is_captain'] == '1');
+                  final playerId = int.tryParse(player['id'].toString()) ?? 0;
+                  final pName = player['name'] ?? 'Player';
+
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
                     decoration: BoxDecoration(
-                      color: isCapt ? AppTheme.gold.withOpacity(0.1) : AppTheme.cardBackground,
+                      color: isCapt ? AppTheme.gold.withValues(alpha: 0.1) : AppTheme.cardBackground,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: isCapt ? AppTheme.gold : Colors.white10),
                     ),
@@ -552,7 +649,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
                         children: [
                           Expanded(
                             child: Text(
-                              player['name'] ?? 'Player',
+                              pName,
                               style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: Colors.white),
                             ),
                           ),
@@ -565,8 +662,42 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
                         ],
                       ),
                       subtitle: Text(
-                        '📞 ${player['mobile'] ?? 'N/A'} • ${player['role'] ?? 'BAT'} • ${player['batting_style'] ?? 'Right Hand Bat'}',
+                        '📞 ${player['mobile'] ?? 'N/A'} • ${player['role'] ?? 'BAT'} • #${player['jersey_number'] ?? '-'}',
                         style: const TextStyle(color: Colors.white60, fontSize: 12),
+                      ),
+                      trailing: PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert, color: Colors.white60),
+                        color: const Color(0xFF1E1E38),
+                        onSelected: (val) {
+                          if (val == 'captain') {
+                            _handleSetCaptain(playerId, pName);
+                          } else if (val == 'remove') {
+                            _handleRemovePlayer(playerId, pName);
+                          }
+                        },
+                        itemBuilder: (ctx) => [
+                          if (!isCapt)
+                            const PopupMenuItem(
+                              value: 'captain',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.star, color: Colors.amber, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Set as Captain', style: TextStyle(color: Colors.white)),
+                                ],
+                              ),
+                            ),
+                          const PopupMenuItem(
+                            value: 'remove',
+                            child: Row(
+                              children: [
+                                Icon(Icons.delete, color: Colors.redAccent, size: 18),
+                                SizedBox(width: 8),
+                                Text('Remove Player', style: TextStyle(color: Colors.redAccent)),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   );

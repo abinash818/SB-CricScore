@@ -42,17 +42,69 @@ $results = [
 try {
     // 1. PLAYERS SEARCH (Name or Phone number)
     if ($type === 'all' || $type === 'players') {
-        $pStmt = $pdo->prepare("
-            SELECT p.id, p.name, p.role, p.jersey_number, p.profile_pic, p.mobile, p.batting_style, p.bowling_style,
-                   t.id as team_id, t.name as team_name
-            FROM players p
-            LEFT JOIN teams t ON t.id = p.team_id
-            WHERE LOWER(p.name) LIKE ? OR p.mobile LIKE ?
-            ORDER BY p.name ASC LIMIT 15
-        ");
-        $pStmt->execute([$like, $like]);
-        $results['players'] = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+        $pList = [];
+        $seenMobiles = [];
+        $seenNames = [];
+
+        // Digits for mobile
+        $digitsOnly = preg_replace('/\D+/', '', $query);
+        $last10 = (strlen($digitsOnly) >= 10) ? substr($digitsOnly, -10) : $digitsOnly;
+        $likeMobile = !empty($last10) ? '%' . $last10 . '%' : $like;
+
+        // App users
+        try {
+            $uStmt = $pdo->prepare("
+                SELECT id, name, mobile, role, jersey_number, profile_pic, batting_style, bowling_style, city
+                FROM app_users
+                WHERE LOWER(name) LIKE ? OR mobile LIKE ?
+                ORDER BY id DESC LIMIT 15
+            ");
+            $uStmt->execute([$like, $likeMobile]);
+            $uRows = $uStmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($uRows as $u) {
+                $mob = trim($u['mobile'] ?? '');
+                $nm = trim($u['name'] ?? '');
+                if (!empty($mob)) $seenMobiles[$mob] = true;
+                if (!empty($nm)) $seenNames[strtolower($nm)] = true;
+
+                $pList[] = [
+                    'id'            => (int)$u['id'],
+                    'name'          => !empty($u['name']) ? $u['name'] : 'User (' . $mob . ')',
+                    'mobile'        => $mob,
+                    'role'          => !empty($u['role']) ? $u['role'] : 'All-Rounder',
+                    'jersey_number' => $u['jersey_number'] ?? '',
+                    'profile_pic'   => $u['profile_pic'] ?? null,
+                    'batting_style' => $u['batting_style'] ?? 'Right Hand Bat',
+                    'bowling_style' => $u['bowling_style'] ?? 'Right Arm Medium',
+                    'team_name'     => 'Registered User ⭐',
+                ];
+            }
+        } catch (\Throwable $e) {}
+
+        // Tournament Players
+        try {
+            $pStmt = $pdo->prepare("
+                SELECT p.id, p.name, p.role, p.jersey_number, p.profile_pic, p.mobile, p.batting_style, p.bowling_style,
+                       t.id as team_id, t.name as team_name
+                FROM players p
+                LEFT JOIN teams t ON t.id = p.team_id
+                WHERE LOWER(p.name) LIKE ? OR p.mobile LIKE ?
+                ORDER BY p.name ASC LIMIT 15
+            ");
+            $pStmt->execute([$like, $likeMobile]);
+            $tRows = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($tRows as $p) {
+                $mob = trim($p['mobile'] ?? '');
+                $nm = trim($p['name'] ?? '');
+                if (!empty($mob) && isset($seenMobiles[$mob])) continue;
+                if (empty($mob) && !empty($nm) && isset($seenNames[strtolower($nm)])) continue;
+                $pList[] = $p;
+            }
+        } catch (\Throwable $e) {}
+
+        $results['players'] = $pList;
     }
+
 
     // 2. TEAMS SEARCH
     if ($type === 'all' || $type === 'teams') {

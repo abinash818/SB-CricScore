@@ -20,7 +20,7 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
   final ApiService _apiService = ApiService();
   bool _isLoading = true;
   Map<String, dynamic>? _profileData;
-  String _selectedFormat = 'T20';
+  String _activeTab = 'batting'; // 'batting', 'bowling', 'teams', 'form'
 
   @override
   void initState() {
@@ -47,9 +47,48 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
     final nameCtrl = TextEditingController(text: player['name'] ?? '');
     final cityCtrl = TextEditingController(text: player['city'] ?? '');
     final jerseyCtrl = TextEditingController(text: player['jersey_number']?.toString() ?? '');
-    String selectedRole = player['role'] ?? 'All-Rounder';
-    String battingStyle = player['batting_style'] ?? 'Right Hand Bat';
-    String bowlingStyle = player['bowling_style'] ?? 'Right Arm Medium';
+
+    // Normalize Role
+    String normalizeRole(dynamic raw) {
+      if (raw == null) return 'All-Rounder';
+      final r = raw.toString().trim().toUpperCase();
+      if (r == 'BAT' || r == 'BATSMAN' || r.contains('BATTER')) return 'Batsman';
+      if (r == 'BOWL' || r == 'BOWLER' || r.contains('BOWLER')) return 'Bowler';
+      if (r == 'WK' || r.contains('WICKET') || r.contains('KEEPER')) return 'Wicketkeeper';
+      return 'All-Rounder';
+    }
+
+    // Normalize Batting Style
+    String normalizeBatting(dynamic raw) {
+      if (raw == null) return 'Right Hand Bat';
+      final s = raw.toString().trim().toLowerCase();
+      if (s.contains('left') || s.contains('lhb')) return 'Left Hand Bat';
+      return 'Right Hand Bat';
+    }
+
+    // Normalize Bowling Style
+    String normalizeBowling(dynamic raw) {
+      final valid = [
+        'Right Arm Fast',
+        'Right Arm Medium',
+        'Right Arm Off Break',
+        'Right Arm Leg Break',
+        'Left Arm Fast',
+        'Left Arm Orthodox',
+        'Left Arm Chinaman'
+      ];
+      if (raw == null) return 'Right Arm Medium';
+      final str = raw.toString().trim();
+      if (valid.contains(str)) return str;
+      if (str.toLowerCase().contains('fast')) return 'Right Arm Fast';
+      if (str.toLowerCase().contains('spin') || str.toLowerCase().contains('break')) return 'Right Arm Off Break';
+      if (str.toLowerCase().contains('left')) return 'Left Arm Fast';
+      return 'Right Arm Medium';
+    }
+
+    String selectedRole = normalizeRole(player['role']);
+    String battingStyle = normalizeBatting(player['batting_style']);
+    String bowlingStyle = normalizeBowling(player['bowling_style']);
     XFile? pickedImage;
     Uint8List? pickedImageBytes;
     bool isSaving = false;
@@ -97,18 +136,19 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
                         children: [
                           CircleAvatar(
                             radius: 46,
-                            backgroundColor: AppTheme.gold.withOpacity(0.2),
+                            backgroundColor: AppTheme.gold.withValues(alpha: 0.2),
                             backgroundImage: pickedImageBytes != null
                                 ? MemoryImage(pickedImageBytes!)
-                                : (player['profile_pic'] != null
-                                    ? NetworkImage('https://sbastro.com/tournament/${player['profile_pic']}') as ImageProvider
+                                : (player['profile_pic'] != null && player['profile_pic'].toString().isNotEmpty
+                                    ? NetworkImage(ApiService.getImageUrl(player['profile_pic'].toString())) as ImageProvider
                                     : null),
-                            child: (pickedImageBytes == null && player['profile_pic'] == null)
+                            child: (pickedImageBytes == null && (player['profile_pic'] == null || player['profile_pic'].toString().isEmpty))
                                 ? Text(
                                     ((player['name'] as String?) ?? 'P')[0].toUpperCase(),
                                     style: GoogleFonts.outfit(fontSize: 32, fontWeight: FontWeight.bold, color: AppTheme.gold),
                                   )
                                 : null,
+
                           ),
                           Positioned(
                             bottom: 0,
@@ -160,16 +200,14 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
                         Expanded(
                           flex: 2,
                           child: DropdownButtonFormField<String>(
-                            value: ['All-Rounder', 'Top-order Batter', 'Middle-order Batter', 'Wicketkeeper Batter', 'Pace Bowler', 'Spin Bowler', 'BAT', 'BOWL', 'AR', 'WK'].contains(selectedRole) ? selectedRole : 'All-Rounder',
+                            value: ['All-Rounder', 'Batsman', 'Bowler', 'Wicketkeeper'].contains(selectedRole) ? selectedRole : 'All-Rounder',
                             decoration: const InputDecoration(labelText: 'Playing Role'),
                             dropdownColor: const Color(0xFF131326),
                             items: const [
                               DropdownMenuItem(value: 'All-Rounder', child: Text('🏏 All-Rounder')),
-                              DropdownMenuItem(value: 'Top-order Batter', child: Text('🏏 Top-order Batter')),
-                              DropdownMenuItem(value: 'Middle-order Batter', child: Text('🏏 Middle-order Batter')),
-                              DropdownMenuItem(value: 'Wicketkeeper Batter', child: Text('🧤 Wicketkeeper Batter')),
-                              DropdownMenuItem(value: 'Pace Bowler', child: Text('⚡ Pace Bowler')),
-                              DropdownMenuItem(value: 'Spin Bowler', child: Text('🌀 Spin Bowler')),
+                              DropdownMenuItem(value: 'Batsman', child: Text('🏏 Batsman')),
+                              DropdownMenuItem(value: 'Bowler', child: Text('⚡ Bowler')),
+                              DropdownMenuItem(value: 'Wicketkeeper', child: Text('🧤 Wicketkeeper')),
                             ],
                             onChanged: (v) => setSheetState(() => selectedRole = v!),
                           ),
@@ -420,15 +458,16 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
                         CircleAvatar(
                           radius: 46,
                           backgroundColor: AppTheme.primaryGold.withValues(alpha: 0.2),
-                          backgroundImage: player['profile_pic'] != null
-                              ? NetworkImage('https://sbastro.com/tournament/${player['profile_pic']}')
+                          backgroundImage: player['profile_pic'] != null && player['profile_pic'].toString().isNotEmpty
+                              ? NetworkImage(ApiService.getImageUrl(player['profile_pic'].toString()))
                               : null,
-                          child: player['profile_pic'] == null
+                          child: (player['profile_pic'] == null || player['profile_pic'].toString().isEmpty)
                               ? Text(
                                   ((player['name'] as String?) ?? 'P')[0].toUpperCase(),
                                   style: GoogleFonts.outfit(fontSize: 32, fontWeight: FontWeight.bold, color: AppTheme.primaryGold),
                                 )
                               : null,
+
                         ),
                         Positioned(
                           bottom: 0,
@@ -503,226 +542,284 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
               ),
               const SizedBox(height: 20),
 
-              // Format Filter Tabs
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: ['All', 'T20', 'T10', 'Test'].map((format) {
-                  final isSelected = _selectedFormat == format;
-                  return GestureDetector(
-                    onTap: () => setState(() => _selectedFormat = format),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: isSelected ? AppTheme.primaryGold : AppTheme.cardBg,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: isSelected ? AppTheme.primaryGold : AppTheme.cardBorder),
-                      ),
-                      child: Text(
-                        format,
-                        style: GoogleFonts.outfit(
-                          color: isSelected ? const Color(0xFF070710) : AppTheme.textMuted,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 24),
-
-              // 🏏 Batting Career Stats
-              _sectionTitle('BATTING CAREER'),
-              const SizedBox(height: 12),
+              // 📱 Touch Tabs Bar (Batting / Bowling / Teams / Form)
               Container(
-                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: AppTheme.cardBg,
-                  borderRadius: BorderRadius.circular(16),
+                  color: const Color(0xFF0D0D1C),
+                  borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: AppTheme.cardBorder),
                 ),
-                child: GridView.count(
-                  crossAxisCount: 3,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  childAspectRatio: 1.6,
+                padding: const EdgeInsets.all(4),
+                child: Row(
                   children: [
-                    _statCell('Innings', '${batting['innings'] ?? 0}'),
-                    _statCell('Runs', '${batting['runs'] ?? 0}', isHighlight: true),
-                    _statCell('Average', '${batting['average'] ?? '0.00'}'),
-                    _statCell('Strike Rate', '${batting['strike_rate'] ?? '0.00'}'),
-                    _statCell('4s', '${batting['fours'] ?? 0}'),
-                    _statCell('6s', '${batting['sixes'] ?? 0}'),
+                    _buildTouchTabItem('batting', '🏏 Batting', Icons.sports_cricket),
+                    _buildTouchTabItem('bowling', '🎯 Bowling', Icons.sports_baseball),
+                    _buildTouchTabItem('teams', '🛡️ Teams', Icons.shield),
+                    _buildTouchTabItem('form', '📈 Form', Icons.trending_up),
                   ],
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
 
-              // 🎯 Bowling Career Stats
-              _sectionTitle('BOWLING CAREER'),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppTheme.cardBg,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppTheme.cardBorder),
-                ),
-                child: GridView.count(
-                  crossAxisCount: 3,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  childAspectRatio: 1.6,
+              // 🏏 TAB 1: BATTING CAREER
+              if (_activeTab == 'batting') ...[
+                // Hero Highlights
+                Row(
                   children: [
-                    _statCell('Overs', '${bowling['overs'] ?? '0.0'}'),
-                    _statCell('Wickets', '${bowling['wickets'] ?? 0}', isHighlight: true),
-                    _statCell('Economy', '${bowling['economy'] ?? '0.00'}'),
-                    _statCell('Average', '${bowling['average'] ?? '0.00'}'),
-                    _statCell('Runs Given', '${bowling['runs'] ?? 0}'),
+                    Expanded(child: _buildHeroStatBox('RUNS', '${batting['runs'] ?? 0}', AppTheme.primaryGold)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _buildHeroStatBox('HS', '${batting['highest_score'] ?? 0}', const Color(0xFF06B6D4))),
+                    const SizedBox(width: 8),
+                    Expanded(child: _buildHeroStatBox('AVG', '${batting['average'] ?? '0.00'}', const Color(0xFF10B981))),
+                    const SizedBox(width: 8),
+                    Expanded(child: _buildHeroStatBox('S/R', '${batting['strike_rate'] ?? '0.00'}', const Color(0xFFF59E0B))),
                   ],
                 ),
-              ),
-              const SizedBox(height: 24),
+                const SizedBox(height: 16),
 
-              // 🛡️ My Teams Section
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _sectionTitle('MY TEAMS & SQUADS 🛡️'),
-                  TextButton.icon(
-                    style: TextButton.styleFrom(foregroundColor: AppTheme.primaryGold),
-                    icon: const Icon(Icons.add_circle, size: 18),
-                    label: const Text('Create Team', style: TextStyle(fontWeight: FontWeight.bold)),
-                    onPressed: () async {
-                      final created = await Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const TeamCreateScreen()),
-                      );
-                      if (created == true) {
-                        _fetchPlayerProfile();
-                      }
-                    },
+                // Detailed Batting Grid
+                _sectionTitle('DETAILED BATTING STATS'),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.cardBg,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppTheme.cardBorder),
                   ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              FutureBuilder<Map<String, dynamic>>(
-                future: _apiService.getMyTeams(
-                  ownerId: player['user_id'] != null ? int.tryParse(player['user_id'].toString()) : null,
-                  playerId: widget.playerId ?? (player['id'] != null ? int.tryParse(player['id'].toString()) : null),
-                  mobile: player['mobile']?.toString() ?? player['phone']?.toString(),
-                  playerName: player['name']?.toString(),
-                ),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(color: AppTheme.primaryGold)));
-                  }
-                  final teams = snapshot.data?['teams'] as List? ?? [];
-                  if (teams.isEmpty) {
-                    return Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(
-                        color: AppTheme.cardBackground,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.white10),
-                      ),
-                      child: Column(
-                        children: [
-                          const Icon(Icons.shield_outlined, color: Colors.white38, size: 36),
-                          const SizedBox(height: 8),
-                          const Text('No teams created yet.', style: TextStyle(color: Colors.white70)),
-                          const SizedBox(height: 12),
-                          ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryGold, foregroundColor: Colors.black),
-                            icon: const Icon(Icons.add, size: 18),
-                            label: const Text('CREATE YOUR TEAM NOW'),
-                            onPressed: () async {
-                              final created = await Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const TeamCreateScreen()),
-                              );
-                              if (created == true) setState(() {});
-                            },
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-
-                  return ListView.builder(
+                  child: GridView.count(
+                    crossAxisCount: 3,
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    itemCount: teams.length,
-                    itemBuilder: (context, index) {
-                      final t = teams[index];
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        decoration: BoxDecoration(
-                          color: AppTheme.cardBackground,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppTheme.primaryGold.withOpacity(0.3)),
-                        ),
-                        child: ListTile(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => TeamDetailScreen(teamId: t['id'])),
-                            );
-                          },
-                          leading: CircleAvatar(
-                            backgroundColor: AppTheme.primaryGold.withOpacity(0.2),
-                            child: const Icon(Icons.shield, color: AppTheme.primaryGold),
-                          ),
-                          title: Text(
-                            t['name'] ?? 'Team',
-                            style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold),
-                          ),
-                          subtitle: Text(
-                            '${t['short_name'] ?? 'TEAM'} • ${t['city'] ?? 'Tamil Nadu'} • ${t['player_count'] ?? 0} Players',
-                            style: const TextStyle(color: Colors.white60, fontSize: 12),
-                          ),
-                          trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: AppTheme.primaryGold),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-
-              // 🔥 Recent Form (Last 5 Matches)
-              if (recentForm.isNotEmpty) ...[
-                _sectionTitle('RECENT FORM'),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 60,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: recentForm.length,
-                    itemBuilder: (context, index) {
-                      final runs = recentForm[index];
-                      return Container(
-                        margin: const EdgeInsets.only(right: 12),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: runs >= 50 ? AppTheme.primaryGold.withValues(alpha: 0.2) : const Color(0xFF131326),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: runs >= 50 ? AppTheme.primaryGold : AppTheme.cardBorder),
-                        ),
-                        child: Center(
-                          child: Text(
-                            '$runs runs',
-                            style: GoogleFonts.outfit(
-                              color: runs >= 50 ? AppTheme.primaryGold : AppTheme.textPrimary,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      );
-                    },
+                    childAspectRatio: 1.5,
+                    children: [
+                      _statCell('Matches', '${batting['matches'] ?? player['total_matches'] ?? 0}'),
+                      _statCell('Innings', '${batting['innings'] ?? 0}'),
+                      _statCell('Not Outs', '${batting['not_outs'] ?? 0}'),
+                      _statCell('Balls Faced', '${batting['balls'] ?? 0}'),
+                      _statCell('50s / 100s', '${batting['fifties'] ?? 0} / ${batting['hundreds'] ?? 0}', isHighlight: true),
+                      _statCell('Fours (4s)', '${batting['fours'] ?? 0}'),
+                      _statCell('Sixes (6s)', '${batting['sixes'] ?? 0}'),
+                      _statCell('Boundary Runs', '${((batting['fours'] ?? 0) * 4) + ((batting['sixes'] ?? 0) * 6)}'),
+                      _statCell('Runs / Inn', (batting['innings'] ?? 0) > 0 ? ((batting['runs'] ?? 0) / (batting['innings'] ?? 1)).toStringAsFixed(1) : '0.0'),
+                    ],
                   ),
                 ),
+              ],
+
+              // 🎯 TAB 2: BOWLING CAREER
+              if (_activeTab == 'bowling') ...[
+                // Hero Highlights
+                Row(
+                  children: [
+                    Expanded(child: _buildHeroStatBox('WICKETS', '${bowling['wickets'] ?? 0}', const Color(0xFFF43F5E))),
+                    const SizedBox(width: 8),
+                    Expanded(child: _buildHeroStatBox('BBI', '${bowling['best_bowling'] ?? '-'}', AppTheme.primaryGold)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _buildHeroStatBox('ECONOMY', '${bowling['economy'] ?? '0.00'}', const Color(0xFF10B981))),
+                    const SizedBox(width: 8),
+                    Expanded(child: _buildHeroStatBox('AVG', '${bowling['average'] ?? '0.00'}', const Color(0xFF06B6D4))),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Detailed Bowling Grid
+                _sectionTitle('DETAILED BOWLING STATS'),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.cardBg,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppTheme.cardBorder),
+                  ),
+                  child: GridView.count(
+                    crossAxisCount: 3,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    childAspectRatio: 1.5,
+                    children: [
+                      _statCell('Matches', '${bowling['matches'] ?? player['total_matches'] ?? 0}'),
+                      _statCell('Innings', '${bowling['innings'] ?? 0}'),
+                      _statCell('Overs', '${bowling['overs'] ?? '0.0'}'),
+                      _statCell('Legal Balls', '${bowling['legal_balls'] ?? 0}'),
+                      _statCell('Strike Rate', '${bowling['strike_rate'] ?? '0.0'}'),
+                      _statCell('3w / 5w Hauls', '${bowling['three_wickets'] ?? 0} / ${bowling['five_wickets'] ?? 0}', isHighlight: true),
+                      _statCell('Runs Given', '${bowling['runs'] ?? 0}'),
+                      _statCell('Wides (WD)', '${bowling['wides'] ?? 0}'),
+                      _statCell('No Balls (NB)', '${bowling['no_balls'] ?? 0}'),
+                    ],
+                  ),
+                ),
+              ],
+
+              // 🛡️ TAB 3: MY TEAMS & SQUADS
+              if (_activeTab == 'teams') ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _sectionTitle('MY TEAMS & SQUADS 🛡️'),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(foregroundColor: AppTheme.primaryGold),
+                      icon: const Icon(Icons.add_circle, size: 18),
+                      label: const Text('Create Team', style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: () async {
+                        final created = await Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const TeamCreateScreen()),
+                        );
+                        if (created == true) {
+                          _fetchPlayerProfile();
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                FutureBuilder<Map<String, dynamic>>(
+                  future: _apiService.getMyTeams(
+                    ownerId: player['user_id'] != null ? int.tryParse(player['user_id'].toString()) : null,
+                    playerId: widget.playerId ?? (player['id'] != null ? int.tryParse(player['id'].toString()) : null),
+                    mobile: player['mobile']?.toString() ?? player['phone']?.toString(),
+                    playerName: player['name']?.toString(),
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(color: AppTheme.primaryGold)));
+                    }
+                    final teams = snapshot.data?['teams'] as List? ?? [];
+                    if (teams.isEmpty) {
+                      return Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: AppTheme.cardBackground,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white10),
+                        ),
+                        child: Column(
+                          children: [
+                            const Icon(Icons.shield_outlined, color: Colors.white38, size: 36),
+                            const SizedBox(height: 8),
+                            const Text('No teams created yet.', style: TextStyle(color: Colors.white70)),
+                            const SizedBox(height: 12),
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryGold, foregroundColor: Colors.black),
+                              icon: const Icon(Icons.add, size: 18),
+                              label: const Text('CREATE YOUR TEAM NOW'),
+                              onPressed: () async {
+                                final created = await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const TeamCreateScreen()),
+                                );
+                                if (created == true) setState(() {});
+                              },
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    return ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: teams.length,
+                      itemBuilder: (context, index) {
+                        final t = teams[index];
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          decoration: BoxDecoration(
+                            color: AppTheme.cardBackground,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppTheme.primaryGold.withOpacity(0.3)),
+                          ),
+                          child: ListTile(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => TeamDetailScreen(teamId: t['id'])),
+                              );
+                            },
+                            leading: CircleAvatar(
+                              backgroundColor: AppTheme.primaryGold.withOpacity(0.2),
+                              child: const Icon(Icons.shield, color: AppTheme.primaryGold),
+                            ),
+                            title: Text(
+                              t['name'] ?? 'Team',
+                              style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold),
+                            ),
+                            subtitle: Text(
+                              '${t['short_name'] ?? 'TEAM'} • ${t['city'] ?? 'Tamil Nadu'} • ${t['player_count'] ?? 0} Players',
+                              style: const TextStyle(color: Colors.white60, fontSize: 12),
+                            ),
+                            trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: AppTheme.primaryGold),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ],
+
+              // 📈 TAB 4: RECENT FORM
+              if (_activeTab == 'form') ...[
+                _sectionTitle('RECENT INNINGS FORM'),
+                const SizedBox(height: 12),
+                if (recentForm.isNotEmpty) ...[
+                  SizedBox(
+                    height: 64,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: recentForm.length,
+                      itemBuilder: (context, index) {
+                        final runs = recentForm[index];
+                        final isFifty = runs >= 50;
+                        return Container(
+                          margin: const EdgeInsets.only(right: 10),
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isFifty ? AppTheme.primaryGold.withOpacity(0.2) : AppTheme.cardBg,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: isFifty ? AppTheme.primaryGold : AppTheme.cardBorder),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                '$runs',
+                                style: GoogleFonts.outfit(
+                                  fontSize: 18,
+                                  color: isFifty ? AppTheme.primaryGold : AppTheme.textPrimary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Text(
+                                'Runs',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: isFifty ? AppTheme.primaryGold : AppTheme.textMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ] else ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: AppTheme.cardBg,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppTheme.cardBorder),
+                    ),
+                    child: const Center(
+                      child: Text('No recent match innings recorded yet.', style: TextStyle(color: AppTheme.textMuted)),
+                    ),
+                  ),
+                ],
               ],
             ],
           ),
@@ -731,14 +828,89 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
     );
   }
 
+  Widget _buildTouchTabItem(String key, String label, IconData icon) {
+    final isSelected = _activeTab == key;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _activeTab = key),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? AppTheme.primaryGold : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: isSelected ? const Color(0xFF070710) : AppTheme.textMuted,
+              ),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                style: GoogleFonts.outfit(
+                  fontSize: 11,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                  color: isSelected ? const Color(0xFF070710) : AppTheme.textMuted,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeroStatBox(String label, String value, Color accentColor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+      decoration: BoxDecoration(
+        color: AppTheme.cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accentColor.withOpacity(0.35)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: GoogleFonts.outfit(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: accentColor,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.bold,
+              color: AppTheme.textMuted,
+              letterSpacing: 0.5,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _sectionTitle(String title) {
     return Text(
       title,
       style: GoogleFonts.outfit(
-        fontSize: 16,
+        fontSize: 14,
         fontWeight: FontWeight.bold,
         color: AppTheme.primaryGold,
-        letterSpacing: 1.2,
+        letterSpacing: 1.1,
       ),
     );
   }
@@ -765,7 +937,7 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
         Text(
           value,
           style: GoogleFonts.outfit(
-            fontSize: 18,
+            fontSize: 16,
             fontWeight: FontWeight.bold,
             color: isHighlight ? AppTheme.primaryGold : AppTheme.textPrimary,
           ),
@@ -773,7 +945,8 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
         const SizedBox(height: 2),
         Text(
           label,
-          style: const TextStyle(color: AppTheme.textMuted, fontSize: 11),
+          style: const TextStyle(color: AppTheme.textMuted, fontSize: 10.5),
+          textAlign: TextAlign.center,
         ),
       ],
     );

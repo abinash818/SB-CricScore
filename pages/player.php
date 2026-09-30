@@ -152,193 +152,572 @@ $bowl_sr = ($oStats['wickets'] > 0) ? round($oStats['legal_balls'] / $oStats['wi
 
 ?>
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
     <link rel="stylesheet" href="../style.css"/>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
-    <title><?= htmlspecialchars($pName) ?> - SB CricScore Profile</title>
+    <title><?= htmlspecialchars($pName) ?> - SB CricScore Career Profile</title>
+    <link rel="manifest" href="../manifest.json">
+    <link rel="icon" type="image/png" href="../assets/logo.png">
+    <link rel="apple-touch-icon" href="../assets/icon-192.png">
+    <meta name="theme-color" content="#070710">
     <style>
-        .profile-header { 
-            text-align: center; 
-            padding: 30px 20px; 
+        .profile-hero {
+            background: linear-gradient(180deg, rgba(223, 186, 115, 0.12) 0%, rgba(19, 19, 38, 0.8) 100%);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            padding: 28px 20px;
+            text-align: center;
             margin-bottom: 20px;
-            background-image: repeating-linear-gradient(transparent, transparent 29px, #ccc 30px);
-            background-color: var(--paper);
-            border-bottom: 2px solid var(--ink);
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
         }
-        .avatar { margin-bottom: 10px; display: inline-block; }
-        .p-name { margin: 0; }
-        
-        .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
-        
-        .stat-box { 
-            background: #fff; 
-            padding: 15px; 
-            border: 2px solid var(--ink); 
-            border-radius: 4px; 
-            text-align: center; 
-            box-shadow: 3px 3px 0px rgba(0,0,0,0.1);
+        .profile-avatar-wrap {
+            width: 104px;
+            height: 104px;
+            border-radius: 50%;
+            margin: 0 auto 14px;
+            overflow: hidden;
+            border: 3px solid var(--gold-primary);
+            box-shadow: var(--gold-glow);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #131326;
             position: relative;
         }
-        .stat-box::before {
-            content: ''; position: absolute; top: -8px; left: 50%; transform: translateX(-50%);
-            width: 40px; height: 12px; background: rgba(255,255,255,0.7); border: 1px solid #ccc;
+        .profile-avatar-wrap img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .hero-name {
+            font-size: 26px;
+            font-weight: 800;
+            margin: 0;
+            background: var(--gold-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-family: var(--font-head);
+        }
+        .profile-badges {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            align-items: center;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+        .pill-badge {
+            font-size: 12px;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .pill-role {
+            background: rgba(223, 186, 115, 0.15);
+            color: var(--gold-light);
+            border: 1px solid rgba(223, 186, 115, 0.35);
+        }
+        .pill-jersey {
+            background: rgba(6, 182, 212, 0.15);
+            color: var(--neon-cyan);
+            border: 1px solid rgba(6, 182, 212, 0.35);
+        }
+        .pill-captain {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fcd34d;
+            border: 1px solid rgba(245, 158, 11, 0.5);
+        }
+        .pill-matches {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--neon-green);
+            border: 1px solid rgba(16, 185, 129, 0.35);
         }
 
-        .stat-label { font-size: 11px; color: var(--ink-light); text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
-        .stat-val { font-size: 24px; font-weight: 900; color: var(--ink); margin-top: 5px; font-family: 'Courier New', monospace; }
-        
-        .section-title { 
-            display: flex; align-items: center; gap: 8px; 
-            font-size: 18px; font-weight: 800; color: var(--ink); 
-            margin-bottom: 15px; 
-            border-bottom: 3px solid var(--pop-yellow); 
-            display: inline-block;
-            padding-right: 20px;
+        /* Touch Tab Switcher */
+        .career-tab-bar {
+            display: flex;
+            gap: 8px;
+            background: #0d0d1c;
+            padding: 6px;
+            border-radius: 14px;
+            border: 1px solid var(--border-subtle);
+            margin-bottom: 22px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
         }
-        
-        .team-list-item { 
-            display: flex; align-items: center; gap: 15px; 
-            padding: 12px; 
-            background: #fff; 
-            border: 2px solid var(--ink); 
-            border-radius: 6px; 
-            margin-bottom: 10px;
-            box-shadow: 2px 2px 0px rgba(0,0,0,0.05);
+        .career-tab-bar::-webkit-scrollbar { display: none; }
+        .touch-tab-btn {
+            flex: 1;
+            min-width: 120px;
+            padding: 10px 14px;
+            border-radius: 10px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            font-family: var(--font-head);
+            font-size: 13px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            white-space: nowrap;
         }
-        .team-icon { font-size: 24px; color: var(--pop-cyan); }
-        .team-name { font-weight: 800; color: var(--ink); font-size: 16px; }
-        .tour-name { font-size: 12px; color: var(--ink-light); font-family: 'Courier New'; }
+        .touch-tab-btn:active {
+            transform: scale(0.96);
+        }
+        .touch-tab-btn.active {
+            background: var(--gold-gradient);
+            color: #070710;
+            box-shadow: 0 4px 15px rgba(223, 186, 115, 0.35);
+        }
+        .touch-tab-btn.active .material-symbols-outlined {
+            color: #070710 !important;
+        }
 
+        /* Stat Grid & Highlight Cards */
+        .tab-pane {
+            display: none;
+            animation: fadeIn 0.3s ease forwards;
+        }
+        .tab-pane.active {
+            display: block;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .highlight-hero-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        @media(min-width: 768px) {
+            .highlight-hero-grid { grid-template-columns: repeat(4, 1fr); }
+        }
+        .highlight-hero-box {
+            background: linear-gradient(135deg, rgba(223,186,115,0.12) 0%, rgba(19,19,38,0.7) 100%);
+            border: 1.5px solid rgba(223, 186, 115, 0.3);
+            border-radius: var(--radius-md);
+            padding: 16px 12px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .highlight-hero-box::after {
+            content: '';
+            position: absolute;
+            top: 0; right: 0; width: 40px; height: 40px;
+            background: radial-gradient(circle, rgba(223,186,115,0.2) 0%, transparent 70%);
+        }
+        .hero-stat-val {
+            font-size: 28px;
+            font-weight: 900;
+            color: var(--gold-light);
+            font-family: var(--font-head);
+            line-height: 1.1;
+        }
+        .hero-stat-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-top: 4px;
+            font-weight: 700;
+        }
+
+        .stat-grid-modern {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
         @media(max-width: 600px) {
-            .stat-grid { grid-template-columns: 1fr 1fr; }
+            .stat-grid-modern { grid-template-columns: repeat(2, 1fr); }
+        }
+        .stat-box-modern {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 14px 10px;
+            text-align: center;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        .stat-box-modern:hover {
+            border-color: var(--border-gold);
+            transform: translateY(-2px);
+        }
+        .stat-box-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            font-weight: 600;
+        }
+        .stat-box-val {
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--text-white);
+            margin-top: 4px;
+            font-family: var(--font-head);
+        }
+
+        .team-card-row {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 14px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            margin-bottom: 10px;
+            transition: all 0.2s;
+        }
+        .team-card-row:hover {
+            border-color: var(--gold-primary);
+            background: var(--bg-card-hover);
+        }
+        .team-avatar-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            background: rgba(223, 186, 115, 0.15);
+            border: 1px solid rgba(223, 186, 115, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--gold-primary);
         }
     </style>
-<link rel="manifest" href="../manifest.json">
-<link rel="icon" type="image/png" href="../assets/logo.png">
-<link rel="apple-touch-icon" href="../assets/icon-192.png">
-<meta name="theme-color" content="#2c3e50">
-<script>
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js');
-  }
-</script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js');
+      }
+    </script>
 </head>
 <body>
 <div class="wrap">
     <div class="topbar">
         <div class="brand">
             <a href="../index.php">
-             <img src="../assets/logo.png" alt="Logo" style="height:40px;">
+                <img src="../assets/logo.png" alt="Logo" style="height:40px;">
             </a>
         </div>
-        <div class="top-actions"><a class="btn" href="javascript:history.back()">← Back</a></div>
+        <div class="top-actions">
+            <a class="btn" href="javascript:history.back()">← Back</a>
+        </div>
     </div>
     
-    <div class="profile-header" style="text-align:center; margin-bottom:24px;">
-        <div class="avatar" style="width:96px; height:96px; border-radius:50%; margin:0 auto 12px; overflow:hidden; border:2.5px solid var(--gold-primary); box-shadow:var(--gold-glow); display:flex; align-items:center; justify-content:center; background:#181830;">
+    <!-- Player Hero Header -->
+    <div class="profile-hero">
+        <div class="profile-avatar-wrap">
             <?php if(!empty($playerRow['profile_pic'])): ?>
-                <img src="../<?= htmlspecialchars($playerRow['profile_pic']) ?>" alt="<?= htmlspecialchars($pName) ?>" style="width:100%; height:100%; object-fit:cover;">
+                <img src="../<?= htmlspecialchars($playerRow['profile_pic']) ?>" alt="<?= htmlspecialchars($pName) ?>">
             <?php else: ?>
-                <span class="material-symbols-outlined" style="font-size:60px; color:var(--gold-primary);">account_circle</span>
+                <span class="material-symbols-outlined" style="font-size:64px; color:var(--gold-primary);">account_circle</span>
             <?php endif; ?>
         </div>
-        <h1 style="margin:0;"><?= htmlspecialchars($pName) ?></h1>
-        <div style="display:flex; justify-content:center; gap:8px; align-items:center; margin-top:6px; flex-wrap:wrap;">
-            <?php if(!empty($playerRow['role'])): ?><span class="role-pill" style="font-size:12px; padding:2px 8px; border-radius:4px; background:rgba(223,186,115,0.18); color:var(--gold-light); font-weight:700;"><?= htmlspecialchars($playerRow['role']) ?></span><?php endif; ?>
-            <?php if(!empty($playerRow['jersey_number'])): ?><span style="font-size:13px; color:var(--gold-light); font-weight:800;">#<?= htmlspecialchars($playerRow['jersey_number']) ?></span><?php endif; ?>
-            <?php if(!empty($playerRow['is_captain'])): ?><span style="color:#f59e0b; font-weight:900; font-size:12px; border:1px solid #f59e0b; border-radius:4px; padding:2px 6px; background:rgba(245,158,11,0.15);">👑 Captain</span><?php endif; ?>
+        <h1 class="hero-name"><?= htmlspecialchars($pName) ?></h1>
+        <div class="profile-badges">
+            <?php if(!empty($playerRow['role'])): ?>
+                <span class="pill-badge pill-role">
+                    <span class="material-symbols-outlined" style="font-size:14px;">sports_cricket</span>
+                    <?= htmlspecialchars($playerRow['role']) ?>
+                </span>
+            <?php endif; ?>
+            <?php if(!empty($playerRow['jersey_number'])): ?>
+                <span class="pill-badge pill-jersey">#<?= htmlspecialchars($playerRow['jersey_number']) ?></span>
+            <?php endif; ?>
+            <?php if(!empty($playerRow['is_captain'])): ?>
+                <span class="pill-badge pill-captain">👑 Captain</span>
+            <?php endif; ?>
+            <span class="pill-badge pill-matches">
+                <span class="material-symbols-outlined" style="font-size:14px;">stadium</span>
+                <?= $totalMatches ?> Matches
+            </span>
         </div>
         <?php if(!empty($playerRow['batting_style']) || !empty($playerRow['bowling_style'])): ?>
-            <div class="muted" style="margin-top:6px; font-size:12.5px;">
-                <?= htmlspecialchars($playerRow['batting_style'] ?? 'RHB') ?> &bull; <?= htmlspecialchars($playerRow['bowling_style'] ?? '') ?>
+            <div style="color:var(--text-muted); font-size:13px; margin-top:8px;">
+                <?= htmlspecialchars($playerRow['batting_style'] ?? 'Right-hand bat') ?> &bull; <?= htmlspecialchars($playerRow['bowling_style'] ?? 'Right-arm medium') ?>
             </div>
         <?php endif; ?>
     </div>
 
-    <?php if(count($graphRuns) > 0): ?>
-    <div class="card">
-        <div class="section-title">Form Guide (Last 20 Innings)</div>
-        <div style="height: 250px; width: 100%;">
-            <canvas id="batChart"></canvas>
-        </div>
-    </div>
-    <?php endif; ?>
-
-    <div class="card">
-        <div class="section-title">
-            <span class="material-symbols-outlined">sports_cricket</span> Batting
-        </div>
-        <div class="stat-grid">
-            <div class="stat-box"><div class="stat-label">Matches</div><div class="stat-val"><?= $totalMatches ?></div></div>
-            <div class="stat-box"><div class="stat-label">Runs</div><div class="stat-val"><?= (int)$bStats['runs'] ?></div></div>
-            <div class="stat-box"><div class="stat-label">Average</div><div class="stat-val"><?= $bat_avg ?></div></div>
-            <div class="stat-box"><div class="stat-label">Highest</div><div class="stat-val"><?= (int)$bStats['hs'] ?></div></div>
-            <div class="stat-box"><div class="stat-label">Strike Rate</div><div class="stat-val"><?= $bat_sr ?></div></div>
-            <div class="stat-box"><div class="stat-label">50s / 100s</div><div class="stat-val"><?= $fifties ?> / <?= $hundreds ?></div></div>
-            <div class="stat-box"><div class="stat-label">Not Outs</div><div class="stat-val"><?= $not_outs ?></div></div>
-            <div class="stat-box"><div class="stat-label">Fours</div><div class="stat-val" style="color:var(--pop-cyan)"><?= (int)$bStats['fours'] ?></div></div>
-            <div class="stat-box"><div class="stat-label">Sixes</div><div class="stat-val" style="color:var(--pop-yellow); text-shadow:1px 1px 0 #000;"><?= (int)$bStats['sixes'] ?></div></div>
-        </div>
+    <!-- Interactive Touch Tabs -->
+    <div class="career-tab-bar" role="tablist">
+        <button class="touch-tab-btn active" onclick="switchCareerTab('batting')" id="tab-btn-batting">
+            <span class="material-symbols-outlined" style="font-size:18px; color:var(--gold-primary);">sports_cricket</span>
+            Batting Career
+        </button>
+        <button class="touch-tab-btn" onclick="switchCareerTab('bowling')" id="tab-btn-bowling">
+            <span class="material-symbols-outlined" style="font-size:18px; color:var(--neon-cyan);">sports_baseball</span>
+            Bowling Career
+        </button>
+        <button class="touch-tab-btn" onclick="switchCareerTab('form')" id="tab-btn-form">
+            <span class="material-symbols-outlined" style="font-size:18px; color:var(--neon-purple);">trending_up</span>
+            Form Guide
+        </button>
+        <button class="touch-tab-btn" onclick="switchCareerTab('teams')" id="tab-btn-teams">
+            <span class="material-symbols-outlined" style="font-size:18px; color:var(--neon-amber);">shield</span>
+            Teams & Awards
+        </button>
     </div>
 
-    <div class="card">
-        <div class="section-title" style="border-color:var(--pop-cyan);">
-            <span class="material-symbols-outlined">sports_baseball</span> Bowling
-        </div>
-        <div class="stat-grid">
-            <div class="stat-box"><div class="stat-label">Wickets</div><div class="stat-val" style="color:var(--pop-red)"><?= (int)$oStats['wickets'] ?></div></div>
-            <div class="stat-box"><div class="stat-label">Best (BBI)</div><div class="stat-val"><?= $bbi ?></div></div>
-            <div class="stat-box"><div class="stat-label">Economy</div><div class="stat-val"><?= $bowl_econ ?></div></div>
-            
-            <div class="stat-box"><div class="stat-label">Average</div><div class="stat-val"><?= $bowl_avg ?></div></div>
-            <div class="stat-box"><div class="stat-label">Strike Rate</div><div class="stat-val"><?= $bowl_sr ?></div></div>
-            <div class="stat-box"><div class="stat-label">3w / 5w</div><div class="stat-val"><?= $w3 ?> / <?= $w5 ?></div></div>
-            
-            <div class="stat-box"><div class="stat-label">Overs</div><div class="stat-val"><?= round($overs, 1) ?></div></div>
-            <div class="stat-box"><div class="stat-label">WD / NB</div><div class="stat-val"><?= (int)$oStats['wides'] ?> / <?= (int)$oStats['no_balls'] ?></div></div>
-            <div class="stat-box"><div class="stat-label">Runs Conc.</div><div class="stat-val"><?= (int)$oStats['runs_conceded'] ?></div></div>
-        </div>
-    </div>
-
-    <?php if($momCount > 0): ?>
-    <div class="card">
-        <div class="section-title" style="border-color:var(--pop-purple);">
-            <span class="material-symbols-outlined">emoji_events</span> Awards
-        </div>
-        <div class="stat-grid" style="grid-template-columns: 1fr;">
-            <div class="stat-box" style="background:var(--pop-yellow); border-color:black;">
-                <div class="stat-label" style="color:black;">Man of the Match</div>
-                <div class="stat-val" style="color:black;"><?= (int)$momCount ?></div>
+    <!-- 🏏 BATTING CAREER TAB -->
+    <div class="tab-pane active" id="pane-batting">
+        <!-- Batting Hero Highlights -->
+        <div class="highlight-hero-grid">
+            <div class="highlight-hero-box">
+                <div class="hero-stat-val" style="color:var(--gold-light);"><?= (int)$bStats['runs'] ?></div>
+                <div class="hero-stat-label">Total Runs</div>
+            </div>
+            <div class="highlight-hero-box">
+                <div class="hero-stat-val" style="color:var(--neon-cyan);"><?= (int)$bStats['hs'] ?></div>
+                <div class="hero-stat-label">Highest Score</div>
+            </div>
+            <div class="highlight-hero-box">
+                <div class="hero-stat-val" style="color:var(--neon-green);"><?= $bat_avg ?></div>
+                <div class="hero-stat-label">Batting Avg</div>
+            </div>
+            <div class="highlight-hero-box">
+                <div class="hero-stat-val" style="color:var(--neon-amber);"><?= $bat_sr ?></div>
+                <div class="hero-stat-label">Strike Rate</div>
             </div>
         </div>
-    </div>
-    <?php endif; ?>
 
-    <div class="card">
-        <div class="section-title">
-            <span class="material-symbols-outlined">groups</span> Teams
-        </div>
-        <?php if(count($teamsList) > 0): ?>
-            <?php foreach($teamsList as $tm): ?>
-            <div class="team-list-item">
-                <span class="material-symbols-outlined team-icon"><?= $tm['team_icon'] ?: 'shield' ?></span>
-                <div class="team-info">
-                    <span class="team-name"><?= htmlspecialchars($tm['team_name']) ?></span>
-                    <span class="tour-name"><?= htmlspecialchars($tm['tour_name']) ?></span>
+        <!-- Detailed Batting Breakdown -->
+        <div class="card" style="margin-bottom:16px;">
+            <h2 style="font-size:16px; margin-bottom:14px; display:flex; align-items:center; gap:8px;">
+                <span class="material-symbols-outlined" style="color:var(--gold-primary);">bar_chart</span>
+                Detailed Batting Statistics
+            </h2>
+            <div class="stat-grid-modern">
+                <div class="stat-box-modern">
+                    <div class="stat-box-label">Matches</div>
+                    <div class="stat-box-val"><?= $totalMatches ?></div>
+                </div>
+                <div class="stat-box-modern">
+                    <div class="stat-box-label">Innings</div>
+                    <div class="stat-box-val"><?= $innings_count ?></div>
+                </div>
+                <div class="stat-box-modern">
+                    <div class="stat-box-label">Not Outs</div>
+                    <div class="stat-box-val"><?= $not_outs ?></div>
+                </div>
+                <div class="stat-box-modern">
+                    <div class="stat-box-label">Balls Faced</div>
+                    <div class="stat-box-val"><?= (int)$bStats['balls'] ?></div>
+                </div>
+                <div class="stat-box-modern">
+                    <div class="stat-box-label">50s / 100s</div>
+                    <div class="stat-box-val" style="color:var(--gold-light);"><?= $fifties ?> / <?= $hundreds ?></div>
+                </div>
+                <div class="stat-box-modern">
+                    <div class="stat-box-label">Fours (4s)</div>
+                    <div class="stat-box-val" style="color:var(--neon-cyan);"><?= (int)$bStats['fours'] ?></div>
+                </div>
+                <div class="stat-box-modern">
+                    <div class="stat-box-label">Sixes (6s)</div>
+                    <div class="stat-box-val" style="color:var(--neon-amber);"><?= (int)$bStats['sixes'] ?></div>
+                </div>
+                <div class="stat-box-modern">
+                    <div class="stat-box-label">Boundary Runs</div>
+                    <div class="stat-box-val" style="color:var(--neon-green);">
+                        <?= ((int)$bStats['fours'] * 4) + ((int)$bStats['sixes'] * 6) ?>
+                    </div>
+                </div>
+                <div class="stat-box-modern">
+                    <div class="stat-box-label">Boundary %</div>
+                    <div class="stat-box-val">
+                        <?= ($bStats['runs'] > 0) ? round(((((int)$bStats['fours'] * 4) + ((int)$bStats['sixes'] * 6)) / (int)$bStats['runs']) * 100, 1) : 0 ?>%
+                    </div>
                 </div>
             </div>
-            <?php endforeach; ?>
+        </div>
+    </div>
+
+    <!-- 🎯 BOWLING CAREER TAB -->
+    <div class="tab-pane" id="pane-bowling">
+        <!-- Bowling Hero Highlights -->
+        <div class="highlight-hero-grid">
+            <div class="highlight-hero-box">
+                <div class="hero-stat-val" style="color:var(--neon-red);"><?= (int)$oStats['wickets'] ?></div>
+                <div class="hero-stat-label">Total Wickets</div>
+            </div>
+            <div class="highlight-hero-box">
+                <div class="hero-stat-val" style="color:var(--gold-light);"><?= $bbi ?></div>
+                <div class="hero-stat-label">Best Bowling (BBI)</div>
+            </div>
+            <div class="highlight-hero-box">
+                <div class="hero-stat-val" style="color:var(--neon-green);"><?= $bowl_econ ?></div>
+                <div class="hero-stat-label">Economy Rate</div>
+            </div>
+            <div class="highlight-hero-box">
+                <div class="hero-stat-val" style="color:var(--neon-cyan);"><?= $bowl_avg ?></div>
+                <div class="hero-stat-label">Bowling Avg</div>
+            </div>
+        </div>
+
+        <!-- Detailed Bowling Breakdown -->
+        <div class="card" style="margin-bottom:16px;">
+            <h2 style="font-size:16px; margin-bottom:14px; display:flex; align-items:center; gap:8px;">
+                <span class="material-symbols-outlined" style="color:var(--neon-cyan);">query_stats</span>
+                Detailed Bowling Statistics
+            </h2>
+            <div class="stat-grid-modern">
+                <div class="stat-box-modern">
+                    <div class="stat-box-label">Matches</div>
+                    <div class="stat-box-val"><?= $totalMatches ?></div>
+                </div>
+                <div class="stat-box-modern">
+                    <div class="stat-box-label">Innings Bowled</div>
+                    <div class="stat-box-val"><?= count($bowlHist) ?></div>
+                </div>
+                <div class="stat-box-modern">
+                    <div class="stat-box-label">Overs</div>
+                    <div class="stat-box-val"><?= round($overs, 1) ?></div>
+                </div>
+                <div class="stat-box-modern">
+                    <div class="stat-box-label">Legal Balls</div>
+                    <div class="stat-box-val"><?= (int)$oStats['legal_balls'] ?></div>
+                </div>
+                <div class="stat-box-modern">
+                    <div class="stat-box-label">Strike Rate</div>
+                    <div class="stat-box-val"><?= $bowl_sr ?></div>
+                </div>
+                <div class="stat-box-modern">
+                    <div class="stat-box-label">3w / 5w Hauls</div>
+                    <div class="stat-box-val" style="color:var(--gold-light);"><?= $w3 ?> / <?= $w5 ?></div>
+                </div>
+                <div class="stat-box-modern">
+                    <div class="stat-box-label">Runs Conceded</div>
+                    <div class="stat-box-val"><?= (int)$oStats['runs_conceded'] ?></div>
+                </div>
+                <div class="stat-box-modern">
+                    <div class="stat-box-label">Wides (WD)</div>
+                    <div class="stat-box-val" style="color:var(--neon-amber);"><?= (int)$oStats['wides'] ?></div>
+                </div>
+                <div class="stat-box-modern">
+                    <div class="stat-box-label">No Balls (NB)</div>
+                    <div class="stat-box-val" style="color:var(--neon-red);"><?= (int)$oStats['no_balls'] ?></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📈 FORM GUIDE TAB -->
+    <div class="tab-pane" id="pane-form">
+        <?php if(count($graphRuns) > 0): ?>
+        <div class="card" style="margin-bottom:16px;">
+            <h2 style="font-size:16px; margin-bottom:14px; display:flex; align-items:center; gap:8px;">
+                <span class="material-symbols-outlined" style="color:var(--neon-purple);">show_chart</span>
+                Form Guide (Last 20 Innings)
+            </h2>
+            <div style="height: 240px; width: 100%;">
+                <canvas id="batChart"></canvas>
+            </div>
+        </div>
+        <div class="card" style="margin-bottom:16px;">
+            <h2 style="font-size:16px; margin-bottom:14px;">Recent Scores Timeline</h2>
+            <div style="display:flex; gap:8px; overflow-x:auto; padding-bottom:6px; scrollbar-width:none;">
+                <?php foreach($chartData as $cd): 
+                    $r = (int)$cd['runs'];
+                    $isOut = ((int)$cd['is_out'] == 1);
+                    $badgeBg = ($r >= 50) ? 'rgba(223, 186, 115, 0.25)' : 'rgba(255,255,255,0.05)';
+                    $badgeBorder = ($r >= 50) ? 'var(--gold-primary)' : 'var(--border-subtle)';
+                    $color = ($r >= 50) ? 'var(--gold-light)' : 'var(--text-white)';
+                ?>
+                <div style="min-width:65px; padding:10px 8px; border-radius:10px; background:<?= $badgeBg ?>; border:1px solid <?= $badgeBorder ?>; text-align:center;">
+                    <div style="font-size:11px; color:var(--text-muted);">M#<?= $cd['id'] ?></div>
+                    <div style="font-size:18px; font-weight:800; color:<?= $color ?>; margin-top:2px;">
+                        <?= $r ?><?= $isOut ? '' : '*' ?>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
         <?php else: ?>
-            <div class="muted">No teams found.</div>
+        <div class="card" style="text-align:center; padding:30px 20px;">
+            <span class="material-symbols-outlined" style="font-size:48px; color:var(--text-muted);">hourglass_empty</span>
+            <div style="margin-top:10px; color:var(--text-muted);">No match innings recorded for this player yet.</div>
+        </div>
         <?php endif; ?>
+    </div>
+
+    <!-- 🛡️ TEAMS & AWARDS TAB -->
+    <div class="tab-pane" id="pane-teams">
+        <?php if($momCount > 0): ?>
+        <div class="card" style="margin-bottom:16px; border:1px solid rgba(245, 158, 11, 0.4); background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(19, 19, 38, 0.8) 100%);">
+            <div style="display:flex; align-items:center; gap:16px;">
+                <span class="material-symbols-outlined" style="font-size:40px; color:var(--neon-amber);">emoji_events</span>
+                <div>
+                    <div style="font-size:12px; color:var(--gold-light); text-transform:uppercase; font-weight:700; letter-spacing:1px;">Player Honors</div>
+                    <div style="font-size:22px; font-weight:900; color:var(--text-white); font-family:var(--font-head); margin-top:2px;">
+                        <?= (int)$momCount ?>x Man of the Match
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <div class="card">
+            <h2 style="font-size:16px; margin-bottom:14px; display:flex; align-items:center; gap:8px;">
+                <span class="material-symbols-outlined" style="color:var(--gold-primary);">groups</span>
+                Teams & Tournaments Participated
+            </h2>
+            <?php if(count($teamsList) > 0): ?>
+                <?php foreach($teamsList as $tm): ?>
+                <div class="team-card-row">
+                    <div class="team-avatar-icon">
+                        <span class="material-symbols-outlined"><?= $tm['team_icon'] ?: 'shield' ?></span>
+                    </div>
+                    <div style="flex:1;">
+                        <div style="font-weight:800; font-size:15px; color:var(--text-white); font-family:var(--font-head);">
+                            <?= htmlspecialchars($tm['team_name']) ?>
+                        </div>
+                        <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">
+                            🏆 <?= htmlspecialchars($tm['tour_name']) ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <div style="color:var(--text-muted); padding:10px 0;">No tournament teams associated with this player yet.</div>
+            <?php endif; ?>
+        </div>
     </div>
 
 </div>
 
 <script>
+    function switchCareerTab(tabId) {
+        // Toggle tab buttons
+        document.querySelectorAll('.touch-tab-btn').forEach(btn => btn.classList.remove('active'));
+        const activeBtn = document.getElementById('tab-btn-' + tabId);
+        if (activeBtn) activeBtn.classList.add('active');
+
+        // Toggle tab panes
+        document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
+        const activePane = document.getElementById('pane-' + tabId);
+        if (activePane) activePane.classList.add('active');
+    }
+
+    // Initialize Chart
     const ctx = document.getElementById('batChart');
     if(ctx) {
         new Chart(ctx, {
@@ -348,15 +727,15 @@ $bowl_sr = ($oStats['wickets'] > 0) ? round($oStats['legal_balls'] / $oStats['wi
                 datasets: [{
                     label: 'Runs',
                     data: <?= json_encode($graphRuns) ?>,
-                    borderColor: '#2c3e50',
-                    borderWidth: 2,
-                    tension: 0.4,
+                    borderColor: '#dfba73',
+                    borderWidth: 2.5,
+                    tension: 0.35,
                     pointBackgroundColor: <?= json_encode($graphColors) ?>,
-                    pointBorderColor: '#2c3e50',
+                    pointBorderColor: '#070710',
+                    pointBorderWidth: 2,
                     pointRadius: 6,
-                    borderDash: [],
                     fill: true,
-                    backgroundColor: 'rgba(0, 188, 212, 0.1)' 
+                    backgroundColor: 'rgba(223, 186, 115, 0.12)' 
                 }]
             },
             options: {
@@ -364,8 +743,15 @@ $bowl_sr = ($oStats['wickets'] > 0) ? round($oStats['legal_balls'] / $oStats['wi
                 maintainAspectRatio: false,
                 plugins: { legend: { display: false } },
                 scales: {
-                    y: { beginAtZero: true, grid: { color: '#eee', borderDash: [5, 5] }, ticks: { font: { family: "'Courier New', monospace" } } },
-                    x: { display: false }
+                    y: { 
+                        beginAtZero: true, 
+                        grid: { color: 'rgba(255, 255, 255, 0.08)' },
+                        ticks: { color: '#94a3b8', font: { family: "'Outfit', sans-serif" } } 
+                    },
+                    x: { 
+                        grid: { display: false },
+                        ticks: { color: '#94a3b8', font: { family: "'Outfit', sans-serif" } }
+                    }
                 }
             }
         });
