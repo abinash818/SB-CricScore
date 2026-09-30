@@ -42,9 +42,20 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
   String _tossDecision = 'bat'; // 'bat' or 'bowl'
   bool _isStarting = false;
 
-  // Scorer Selection (Batting Team Squad)
+  // Squads
   List<dynamic> _battingSquad = [];
+  List<dynamic> _bowlingSquad = [];
   bool _isLoadingSquad = false;
+
+  // Opening Lineup Selection
+  int? _strikerId;
+  String? _strikerName;
+  int? _nonStrikerId;
+  String? _nonStrikerName;
+  int? _bowlerId;
+  String? _bowlerName;
+
+  // Scorer Selection (Batting Team Squad)
   int? _selectedScorerPlayerId;
   String? _selectedScorerName;
 
@@ -64,7 +75,7 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
       curve: Curves.easeOutBack,
     );
 
-    _loadBattingSquad(_getBattingTeamId());
+    _loadSquads();
   }
 
   @override
@@ -82,31 +93,76 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
     }
   }
 
+  int _getBowlingTeamId() {
+    final batId = _getBattingTeamId();
+    return (batId == widget.teamAId) ? widget.teamBId : widget.teamAId;
+  }
+
   String _getBattingTeamName() {
     final batId = _getBattingTeamId();
     return (batId == widget.teamAId) ? widget.teamAName : widget.teamBName;
   }
 
-  Future<void> _loadBattingSquad(int teamId) async {
+  String _getBowlingTeamName() {
+    final bowlId = _getBowlingTeamId();
+    return (bowlId == widget.teamAId) ? widget.teamAName : widget.teamBName;
+  }
+
+  Future<void> _loadSquads() async {
+    final batId = _getBattingTeamId();
+    final bowlId = _getBowlingTeamId();
     setState(() => _isLoadingSquad = true);
     try {
-      final res = await _apiService.dio.get('/team_ops.php', queryParameters: {
+      final batRes = await _apiService.dio.get('/team_ops.php', queryParameters: {
         'action': 'get',
-        'team_id': teamId,
+        'team_id': batId,
       });
+      final bowlRes = await _apiService.dio.get('/team_ops.php', queryParameters: {
+        'action': 'get',
+        'team_id': bowlId,
+      });
+
       if (mounted) {
-        final squad = res.data['squad'] as List? ?? [];
+        final batSquad = batRes.data['squad'] as List? ?? [];
+        final bowlSquad = bowlRes.data['squad'] as List? ?? [];
+
         setState(() {
-          _battingSquad = squad;
+          _battingSquad = batSquad;
+          _bowlingSquad = bowlSquad;
           _isLoadingSquad = false;
-          if (squad.isNotEmpty) {
-            // Default to captain or first player
-            final capt = squad.firstWhere(
+
+          // Auto-select Scorer (Captain or first player)
+          if (batSquad.isNotEmpty) {
+            final capt = batSquad.firstWhere(
               (p) => p['is_captain'] == 1 || p['is_captain'] == '1' || (p['team_role'] ?? '') == 'leader',
-              orElse: () => squad.first,
+              orElse: () => batSquad.first,
             );
             _selectedScorerPlayerId = int.tryParse(capt['id'].toString());
             _selectedScorerName = capt['name']?.toString() ?? 'Player';
+
+            // Auto-select Striker & Non-Striker
+            final p1 = batSquad[0];
+            _strikerId = int.tryParse(p1['id'].toString());
+            _strikerName = p1['name']?.toString() ?? 'Batter 1';
+
+            if (batSquad.length > 1) {
+              final p2 = batSquad[1];
+              _nonStrikerId = int.tryParse(p2['id'].toString());
+              _nonStrikerName = p2['name']?.toString() ?? 'Batter 2';
+            } else {
+              _nonStrikerId = null;
+              _nonStrikerName = null;
+            }
+          }
+
+          // Auto-select Bowler
+          if (bowlSquad.isNotEmpty) {
+            final b1 = bowlSquad.firstWhere(
+              (p) => (p['role'] ?? '').toString().toUpperCase().contains('BOWL') || (p['role'] ?? '').toString().toUpperCase().contains('ALL'),
+              orElse: () => bowlSquad.first,
+            );
+            _bowlerId = int.tryParse(b1['id'].toString());
+            _bowlerName = b1['name']?.toString() ?? 'Bowler 1';
           }
         });
       }
@@ -141,7 +197,7 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
         _tossWinnerId = winner;
       });
 
-      _loadBattingSquad(_getBattingTeamId());
+      _loadSquads();
     });
   }
 
@@ -149,17 +205,119 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
     setState(() {
       _tossDecision = decision;
     });
-    _loadBattingSquad(_getBattingTeamId());
+    _loadSquads();
+  }
+
+  Future<void> _showQuickAddPlayerDialog(bool isBattingTeam) async {
+    final teamId = isBattingTeam ? _getBattingTeamId() : _getBowlingTeamId();
+    final teamName = isBattingTeam ? _getBattingTeamName() : _getBowlingTeamName();
+    final nameCtrl = TextEditingController();
+    String selectedRole = isBattingTeam ? 'BAT' : 'BOWL';
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF0F0F1E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppTheme.primaryGold),
+        ),
+        title: Text(
+          'Add Player to $teamName',
+          style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameCtrl,
+              autofocus: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Player Name *',
+                hintText: 'e.g. Ramesh, Karthik',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryGold,
+              foregroundColor: const Color(0xFF070710),
+            ),
+            onPressed: () async {
+              final name = nameCtrl.text.trim();
+              if (name.isEmpty) return;
+              Navigator.pop(ctx);
+              try {
+                final res = await _apiService.dio.post(
+                  '/team_ops.php',
+                  queryParameters: {'action': 'add_player'},
+                  data: {
+                    'team_id': teamId,
+                    'name': name,
+                    'role': selectedRole,
+                  },
+                );
+                if (res.data['success'] == true) {
+                  await _loadSquads();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Player $name added to $teamName! ✅'), backgroundColor: Colors.green),
+                    );
+                  }
+                }
+              } catch (_) {}
+            },
+            child: const Text('Add Player ✅', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _handleStartMatch() async {
     if (_tossWinnerId == null) return;
 
+    // Validation
+    if (_strikerId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select Striker Batsman (On Strike) 🏏'), backgroundColor: AppTheme.errorRed),
+      );
+      return;
+    }
+
+    if (_nonStrikerId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select Non-Striker Batsman 🏏'), backgroundColor: AppTheme.errorRed),
+      );
+      return;
+    }
+
+    if (_strikerId == _nonStrikerId) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Striker and Non-Striker cannot be the same player!'), backgroundColor: AppTheme.errorRed),
+      );
+      return;
+    }
+
+    if (_bowlerId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select Opening Bowler ⚾'), backgroundColor: AppTheme.errorRed),
+      );
+      return;
+    }
+
     setState(() => _isStarting = true);
 
     try {
       final batFirstId = _getBattingTeamId();
-      final bowlFirstId = (batFirstId == widget.teamAId) ? widget.teamBId : widget.teamAId;
+      final bowlFirstId = _getBowlingTeamId();
 
       final res = await _apiService.dio.post('/match_start.php', data: {
         'match_id': widget.matchId,
@@ -177,7 +335,7 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
         if (res.data != null && (res.data['success'] == true || res.data['ok'] == true)) {
           final int inningsId = int.tryParse(res.data['innings_id']?.toString() ?? '1') ?? 1;
           final String battingTeamName = _getBattingTeamName();
-          final String bowlingTeamName = (batFirstId == widget.teamAId) ? widget.teamBName : widget.teamAName;
+          final String bowlingTeamName = _getBowlingTeamName();
 
           Navigator.pushAndRemoveUntil(
             context,
@@ -191,6 +349,12 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
                 bowlingTeamName: bowlingTeamName,
                 oversLimit: widget.oversLimit,
                 initialScorerName: _selectedScorerName,
+                initialStrikerId: _strikerId,
+                initialStrikerName: _strikerName,
+                initialNonStrikerId: _nonStrikerId,
+                initialNonStrikerName: _nonStrikerName,
+                initialBowlerId: _bowlerId,
+                initialBowlerName: _bowlerName,
               ),
             ),
             (route) => false,
@@ -218,12 +382,13 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     final String winnerName = (_tossWinnerId == widget.teamAId) ? widget.teamAName : widget.teamBName;
     final String battingTeamName = _getBattingTeamName();
+    final String bowlingTeamName = _getBowlingTeamName();
 
     return Scaffold(
       backgroundColor: AppTheme.background,
       appBar: AppBar(
         title: Text(
-          'Match Toss & Scorer Setup 🪙',
+          'Match Toss & Setup 🪙',
           style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontWeight: FontWeight.bold),
         ),
         backgroundColor: AppTheme.cardBg,
@@ -314,7 +479,7 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
             ),
             const SizedBox(height: 12),
 
-            Text('Calling Choice:', style: TextStyle(fontSize: 13, color: Colors.white70, fontWeight: FontWeight.w600)),
+            const Text('Calling Choice:', style: TextStyle(fontSize: 13, color: Colors.white70, fontWeight: FontWeight.w600)),
             const SizedBox(height: 6),
             Row(
               children: [
@@ -385,7 +550,7 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
                 ),
               ],
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
             // ── 2. 3D ANIMATED COIN FLIP ──
             Center(
@@ -394,7 +559,7 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
                   AnimatedBuilder(
                     animation: _coinAnimation,
                     builder: (ctx, child) {
-                      final angle = _coinAnimation.value * pi * 8; // 4 full 360 spins
+                      final angle = _coinAnimation.value * pi * 8; // 4 full spins
                       final bool isHeadsFace = (cos(angle) >= 0);
                       final String displayFace = _coinResult != null ? _coinResult! : (isHeadsFace ? 'heads' : 'tails');
 
@@ -404,8 +569,8 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
                           ..setEntry(3, 2, 0.002)
                           ..rotateY(angle),
                         child: Container(
-                          width: 110,
-                          height: 110,
+                          width: 100,
+                          height: 100,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             gradient: displayFace == 'heads'
@@ -414,8 +579,8 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
                             boxShadow: [
                               BoxShadow(
                                 color: (displayFace == 'heads' ? AppTheme.primaryGold : Colors.white).withValues(alpha: 0.4),
-                                blurRadius: 20,
-                                spreadRadius: 3,
+                                blurRadius: 18,
+                                spreadRadius: 2,
                               ),
                             ],
                             border: Border.all(color: Colors.white, width: 3),
@@ -426,15 +591,15 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
                               children: [
                                 Text(
                                   displayFace == 'heads' ? '👑' : '🦅',
-                                  style: const TextStyle(fontSize: 32),
+                                  style: const TextStyle(fontSize: 28),
                                 ),
                                 Text(
                                   displayFace.toUpperCase(),
                                   style: GoogleFonts.outfit(
                                     fontWeight: FontWeight.bold,
-                                    fontSize: 13,
+                                    fontSize: 12,
                                     color: Colors.black87,
-                                    letterSpacing: 1.2,
+                                    letterSpacing: 1.1,
                                   ),
                                 ),
                               ],
@@ -444,31 +609,31 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
                       );
                     },
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primaryGold,
                       foregroundColor: const Color(0xFF070710),
-                      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 11),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                     ),
-                    icon: const Icon(Icons.casino, size: 20),
+                    icon: const Icon(Icons.casino, size: 18),
                     label: Text(
                       _isFlipping ? 'FLIPPING COIN... 🪙' : 'FLIP COIN 🪙',
-                      style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 14),
+                      style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13),
                     ),
                     onPressed: _isFlipping ? null : _flipCoin,
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
 
             // ── TOSS RESULT BANNER ──
             if (_coinResult != null) ...[
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: const Color(0xFF0D1B14),
                   borderRadius: BorderRadius.circular(14),
@@ -478,17 +643,17 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
                   children: [
                     Text(
                       '🎉 IT\'S ${_coinResult!.toUpperCase()}!',
-                      style: GoogleFonts.outfit(color: const Color(0xFF00E676), fontWeight: FontWeight.bold, fontSize: 16),
+                      style: GoogleFonts.outfit(color: const Color(0xFF00E676), fontWeight: FontWeight.bold, fontSize: 15),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     Text(
                       '$winnerName won the toss!',
-                      style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+                      style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
             ],
 
             // ── 3. TOSS WINNER DECISION ──
@@ -501,7 +666,7 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
                     borderRadius: BorderRadius.circular(14),
                     onTap: () => _onTossDecisionChanged('bat'),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                       decoration: BoxDecoration(
                         color: _tossDecision == 'bat' ? AppTheme.primaryGold.withValues(alpha: 0.2) : AppTheme.cardBg,
                         borderRadius: BorderRadius.circular(14),
@@ -512,8 +677,8 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
                       ),
                       child: Column(
                         children: [
-                          const Icon(Icons.sports_cricket, size: 30, color: AppTheme.primaryGold),
-                          const SizedBox(height: 6),
+                          const Icon(Icons.sports_cricket, size: 26, color: AppTheme.primaryGold),
+                          const SizedBox(height: 4),
                           Text(
                             'ELECTED TO BAT',
                             style: GoogleFonts.outfit(
@@ -533,7 +698,7 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
                     borderRadius: BorderRadius.circular(14),
                     onTap: () => _onTossDecisionChanged('bowl'),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                       decoration: BoxDecoration(
                         color: _tossDecision == 'bowl' ? AppTheme.primaryGold.withValues(alpha: 0.2) : AppTheme.cardBg,
                         borderRadius: BorderRadius.circular(14),
@@ -544,8 +709,8 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
                       ),
                       child: Column(
                         children: [
-                          const Icon(Icons.sports_baseball, size: 30, color: AppTheme.primaryGold),
-                          const SizedBox(height: 6),
+                          const Icon(Icons.sports_baseball, size: 26, color: AppTheme.primaryGold),
+                          const SizedBox(height: 4),
                           Text(
                             'ELECTED TO BOWL',
                             style: GoogleFonts.outfit(
@@ -563,40 +728,186 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
             ),
             const SizedBox(height: 24),
 
-            // ── 4. DESIGNATED SCORER SELECTION (Batting Team Squad) ──
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    '3. Innings 1 Scorer ✍️ ($battingTeamName)',
-                    style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.primaryGold),
+            // ── 4. CRICHEROES STYLE OPENING LINEUP SELECTION ──
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF101024),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppTheme.primaryGold.withValues(alpha: 0.4), width: 1.2),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '3. Opening Lineup 🏏',
+                        style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: AppTheme.primaryGold),
+                      ),
+                      if (_isLoadingSquad)
+                        const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryGold)),
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 4),
+                  Text(
+                    'Batting: $battingTeamName  |  Bowling: $bowlingTeamName',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                  const Divider(color: Colors.white12, height: 20),
+
+                  // ── STRIKER BATSMAN ──
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('🏏 Striker (On Strike) *', style: TextStyle(color: Color(0xFF00E676), fontWeight: FontWeight.bold, fontSize: 13)),
+                      InkWell(
+                        onTap: () => _showQuickAddPlayerDialog(true),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          child: Text('+ Add Batter', style: TextStyle(color: AppTheme.primaryGold, fontSize: 11, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  if (_battingSquad.isEmpty)
+                    const Text('No players in batting squad. Tap "+ Add Batter" above.', style: TextStyle(color: AppTheme.errorRed, fontSize: 12))
+                  else
+                    DropdownButtonFormField<int>(
+                      isExpanded: true,
+                      initialValue: _strikerId,
+                      dropdownColor: const Color(0xFF131326),
+                      decoration: const InputDecoration(
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        prefixIcon: Icon(Icons.sports_cricket, color: Color(0xFF00E676), size: 20),
+                      ),
+                      items: _battingSquad.map<DropdownMenuItem<int>>((p) {
+                        final pid = int.parse(p['id'].toString());
+                        final isCapt = (p['is_captain'] == 1 || p['is_captain'] == '1' || (p['team_role'] ?? '') == 'leader');
+                        return DropdownMenuItem<int>(
+                          value: pid,
+                          child: Text(
+                            "${p['name']} ${isCapt ? '👑 (C)' : ''} • ${p['role'] ?? 'BAT'}",
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (val) {
+                        setState(() {
+                          _strikerId = val;
+                          final sel = _battingSquad.firstWhere((p) => int.parse(p['id'].toString()) == val, orElse: () => null);
+                          if (sel != null) _strikerName = sel['name'];
+                        });
+                      },
+                    ),
+                  const SizedBox(height: 14),
+
+                  // ── NON-STRIKER BATSMAN ──
+                  const Text('🏏 Non-Striker *', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(height: 6),
+                  if (_battingSquad.length < 2)
+                    const Text('Need at least 2 batsmen. Tap "+ Add Batter" above.', style: TextStyle(color: Colors.orange, fontSize: 12))
+                  else
+                    DropdownButtonFormField<int>(
+                      isExpanded: true,
+                      initialValue: _nonStrikerId,
+                      dropdownColor: const Color(0xFF131326),
+                      decoration: const InputDecoration(
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        prefixIcon: Icon(Icons.sports_cricket_outlined, color: Colors.white70, size: 20),
+                      ),
+                      items: _battingSquad.map<DropdownMenuItem<int>>((p) {
+                        final pid = int.parse(p['id'].toString());
+                        final isCapt = (p['is_captain'] == 1 || p['is_captain'] == '1' || (p['team_role'] ?? '') == 'leader');
+                        return DropdownMenuItem<int>(
+                          value: pid,
+                          child: Text(
+                            "${p['name']} ${isCapt ? '👑 (C)' : ''} • ${p['role'] ?? 'BAT'}",
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (val) {
+                        setState(() {
+                          _nonStrikerId = val;
+                          final sel = _battingSquad.firstWhere((p) => int.parse(p['id'].toString()) == val, orElse: () => null);
+                          if (sel != null) _nonStrikerName = sel['name'];
+                        });
+                      },
+                    ),
+                  const SizedBox(height: 14),
+
+                  // ── OPENING BOWLER ──
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('⚾ Opening Bowler ($bowlingTeamName) *', style: const TextStyle(color: AppTheme.primaryGold, fontWeight: FontWeight.bold, fontSize: 13)),
+                      InkWell(
+                        onTap: () => _showQuickAddPlayerDialog(false),
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          child: Text('+ Add Bowler', style: TextStyle(color: AppTheme.primaryGold, fontSize: 11, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  if (_bowlingSquad.isEmpty)
+                    const Text('No players in bowling squad. Tap "+ Add Bowler" above.', style: TextStyle(color: AppTheme.errorRed, fontSize: 12))
+                  else
+                    DropdownButtonFormField<int>(
+                      isExpanded: true,
+                      initialValue: _bowlerId,
+                      dropdownColor: const Color(0xFF131326),
+                      decoration: const InputDecoration(
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        prefixIcon: Icon(Icons.sports_baseball, color: AppTheme.primaryGold, size: 20),
+                      ),
+                      items: _bowlingSquad.map<DropdownMenuItem<int>>((p) {
+                        final pid = int.parse(p['id'].toString());
+                        final isCapt = (p['is_captain'] == 1 || p['is_captain'] == '1' || (p['team_role'] ?? '') == 'leader');
+                        return DropdownMenuItem<int>(
+                          value: pid,
+                          child: Text(
+                            "${p['name']} ${isCapt ? '👑 (C)' : ''} • ${p['role'] ?? 'BOWL'}",
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (val) {
+                        setState(() {
+                          _bowlerId = val;
+                          final sel = _bowlingSquad.firstWhere((p) => int.parse(p['id'].toString()) == val, orElse: () => null);
+                          if (sel != null) _bowlerName = sel['name'];
+                        });
+                      },
+                    ),
+                ],
+              ),
             ),
-            const SizedBox(height: 6),
-            Text(
-              'Batting team scores their own innings. Scorer will handover to the other team in 2nd Innings.',
+            const SizedBox(height: 20),
+
+            // ── 5. DESIGNATED SCORER SELECTION ──
+            Text('4. Innings 1 Scorer ✍️ ($battingTeamName)', style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.primaryGold)),
+            const SizedBox(height: 4),
+            const Text(
+              'Scorekeeper will record balls for Innings 1 and handover in Innings 2.',
               style: TextStyle(color: Colors.white60, fontSize: 11),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
 
-            if (_isLoadingSquad)
-              const Center(child: Padding(padding: EdgeInsets.all(12.0), child: CircularProgressIndicator(color: AppTheme.primaryGold)))
-            else if (_battingSquad.isEmpty)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: AppTheme.cardBg, borderRadius: BorderRadius.circular(10)),
-                child: const Text('Captain will act as primary scorekeeper.', style: TextStyle(color: Colors.white70, fontSize: 12)),
-              )
-            else
+            if (_battingSquad.isNotEmpty)
               DropdownButtonFormField<int>(
                 isExpanded: true,
                 initialValue: _selectedScorerPlayerId,
                 dropdownColor: const Color(0xFF131326),
                 decoration: const InputDecoration(
-                  labelText: 'Select Scorekeeper for Innings 1',
+                  labelText: 'Scorekeeper for Innings 1',
                   prefixIcon: Icon(Icons.edit_note, color: AppTheme.primaryGold),
                 ),
                 items: _battingSquad.map<DropdownMenuItem<int>>((p) {
@@ -622,7 +933,7 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
                   });
                 },
               ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 28),
 
             // ── START MATCH & OPEN SCORER ──
             SizedBox(
