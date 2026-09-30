@@ -33,13 +33,13 @@ $match_date = trim($input['match_date'] ?? '');
 $match_time = trim($input['match_time'] ?? '');
 $stage      = trim($input['stage'] ?? ($is_final ? 'Final' : 'League'));
 
-if ($team_a <= 0 || $team_b <= 0) {
+if ($team_a <= 0) {
     http_response_code(400);
-    echo json_encode(['success' => false, 'message' => 'Team A and Team B are required']);
+    echo json_encode(['success' => false, 'message' => 'Host Team (Team A) is required']);
     exit;
 }
 
-if ($team_a === $team_b) {
+if ($team_b > 0 && $team_a === $team_b) {
     http_response_code(400);
     echo json_encode(['success' => false, 'message' => 'Team A and Team B cannot be the same team']);
     exit;
@@ -101,10 +101,9 @@ try {
         try { $pdo->exec("ALTER TABLE matches ADD COLUMN youtube_live_url VARCHAR(255) DEFAULT NULL"); $existingCols['youtube_live_url'] = true; } catch (Throwable $e) {}
     }
 
-
     $pdo->beginTransaction();
     
-    $status = ($bat_first > 0) ? 'live' : 'scheduled';
+    $status = ($bat_first > 0 && $team_b > 0) ? 'live' : 'scheduled';
     $toss_winner = ($bat_first > 0) ? $bat_first : null;
     $toss_dec = ($bat_first > 0) ? 'bat' : null;
 
@@ -112,7 +111,7 @@ try {
     $insertData = [
         'tournament_id'       => ($tid > 0 ? $tid : null),
         'team_a_id'           => $team_a,
-        'team_b_id'           => $team_b,
+        'team_b_id'           => ($team_b > 0 ? $team_b : null),
         'toss_winner_team_id' => $toss_winner,
         'toss_decision'       => $toss_dec,
         'overs_limit'         => $overs,
@@ -146,7 +145,34 @@ try {
     $stmt->execute($values);
     $match_id = (int)$pdo->lastInsertId();
 
-    if ($bat_first > 0) {
+    // Save Host Playing XI if provided
+    $host_players = $input['host_player_ids'] ?? ($input['team_a_player_ids'] ?? []);
+    if (!empty($host_players) && is_array($host_players)) {
+        try {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS match_playing_xi (
+                    id            INT AUTO_INCREMENT PRIMARY KEY,
+                    match_id      INT NOT NULL,
+                    team_id       INT NOT NULL,
+                    player_id     INT NOT NULL,
+                    is_substitute TINYINT(1) DEFAULT 0,
+                    is_captain    TINYINT(1) DEFAULT 0,
+                    is_keeper     TINYINT(1) DEFAULT 0,
+                    batting_order INT DEFAULT NULL,
+                    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_mpxi_match (match_id),
+                    INDEX idx_mpxi_team (team_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            ");
+            $insXI = $pdo->prepare("INSERT INTO match_playing_xi (match_id, team_id, player_id, batting_order) VALUES (?, ?, ?, ?)");
+            $order = 1;
+            foreach ($host_players as $pid) {
+                $insXI->execute([$match_id, $team_a, (int)$pid, $order++]);
+            }
+        } catch (Throwable $e) {}
+    }
+
+    if ($bat_first > 0 && $team_b > 0) {
         $bowling = ($bat_first == $team_a ? $team_b : $team_a);
         // Create Innings 1
         $i1 = $pdo->prepare("INSERT INTO innings (match_id, innings_no, batting_team_id, bowling_team_id, completed) VALUES (?, 1, ?, ?, 0)");
@@ -160,15 +186,7 @@ try {
     $pdo->commit();
 
     $shareLink = "https://sbastro.com/tournament/pages/match.php?match_id={$match_id}&code={$match_code}";
-    $qrPayload = json_encode([
-        'type'       => 'sbcric_match_invite',
-        'match_id'   => $match_id,
-        'match_code' => $match_code,
-        'team_a_id'  => $team_a,
-        'venue'      => $venue_name,
-        'overs'      => $overs,
-        'ball_type'  => $ball_type,
-    ]);
+    $qrPayload = "sbcric_match:{$match_code}";
 
     echo json_encode([
         'success'      => true,
@@ -179,7 +197,9 @@ try {
         'qr_payload'   => $qrPayload,
         'venue_name'   => $venue_name,
         'ball_type'    => $ball_type,
-        'message'      => 'Match created successfully'
+        'overs'        => $overs,
+        'invite_status'=> $invite_st,
+        'message'      => 'Match & QR Code generated successfully! 🏏'
     ]);
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) {

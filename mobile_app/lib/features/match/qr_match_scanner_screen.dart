@@ -75,8 +75,38 @@ class _QrMatchScannerScreenState extends State<QrMatchScannerScreen> {
     }
   }
 
-  String _cleanMatchCode(String raw) {
-    var code = raw.trim();
+  void _onDetect(BarcodeCapture capture) {
+    if (_isProcessing) return;
+    for (final barcode in capture.barcodes) {
+      final rawValue = barcode.rawValue;
+      if (rawValue != null && rawValue.isNotEmpty) {
+        _handleScannedPayload(rawValue);
+        break;
+      }
+    }
+  }
+
+  void _handleScannedPayload(String raw) async {
+    final payload = raw.trim();
+
+    // 1. Tournament Registration QR
+    if (payload.startsWith('sbcric_tourn:') || payload.contains('tour_id=')) {
+      String tidStr = '';
+      if (payload.startsWith('sbcric_tourn:')) {
+        tidStr = payload.replaceFirst('sbcric_tourn:', '');
+      } else {
+        final uri = Uri.tryParse(payload);
+        tidStr = uri?.queryParameters['tour_id'] ?? '';
+      }
+      final tid = int.tryParse(tidStr);
+      if (tid != null && tid > 0) {
+        _handleTournamentQr(tid);
+        return;
+      }
+    }
+
+    // 2. Match Invite QR / Code
+    String code = payload;
     if (code.startsWith('sbcric_match:')) {
       code = code.replaceFirst('sbcric_match:', '');
     } else if (code.contains('code=')) {
@@ -84,69 +114,32 @@ class _QrMatchScannerScreenState extends State<QrMatchScannerScreen> {
       if (uri != null && uri.queryParameters.containsKey('code')) {
         code = uri.queryParameters['code']!;
       }
-    } else if (code.contains('match_id=')) {
-      final uri = Uri.tryParse(code);
-      if (uri != null && uri.queryParameters.containsKey('match_id')) {
-        code = uri.queryParameters['match_id']!;
-      }
     }
-    return code.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '').toUpperCase();
-  }
-
-  void _onDetect(BarcodeCapture capture) {
-    if (_isProcessing) return;
-    for (final barcode in capture.barcodes) {
-      final rawValue = barcode.rawValue;
-      if (rawValue != null && rawValue.isNotEmpty) {
-        final code = _cleanMatchCode(rawValue);
-        if (code.isNotEmpty) {
-          _joinMatch(code);
-          break;
-        }
-      }
+    code = code.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '').toUpperCase();
+    if (code.isNotEmpty) {
+      _fetchAndShowMatchInvite(code);
     }
   }
 
-  Future<void> _joinMatch(String matchCode) async {
+  Future<void> _fetchAndShowMatchInvite(String matchCode) async {
     if (_isProcessing) return;
-
-    if (_selectedTeamId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select your team first before scanning')),
-      );
-      return;
-    }
-
     setState(() => _isProcessing = true);
     _scannerController.stop();
 
     try {
-      final res = await _apiService.joinMatchQR(
-        teamId: _selectedTeamId!,
-        matchCode: matchCode,
-      );
+      final res = await _apiService.dio.get('/match_join_qr.php', queryParameters: {
+        'action': 'get_invite',
+        'match_code': matchCode,
+      });
 
       if (mounted) {
-        if (res['success'] == true) {
-          final matchId = res['match_id'] as int? ?? 0;
-          final teamAName = res['team_a_name'] ?? 'Team A';
-          final teamBName = res['team_b_name'] ?? 'Team B';
-
-          _showJoinSuccessDialog(
-            matchId: matchId,
-            matchCode: matchCode,
-            teamAName: teamAName,
-            teamBName: teamBName,
-            teamBId: _selectedTeamId!,
-          );
+        setState(() => _isProcessing = false);
+        if (res.data['success'] == true) {
+          _showMatchInviteBottomSheet(res.data, matchCode);
         } else {
-          setState(() => _isProcessing = false);
           _scannerController.start();
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(res['message'] ?? 'Failed to connect match'),
-              backgroundColor: AppTheme.errorRed,
-            ),
+            SnackBar(content: Text(res.data['message'] ?? 'Invalid Match QR'), backgroundColor: AppTheme.errorRed),
           );
         }
       }
@@ -155,90 +148,377 @@ class _QrMatchScannerScreenState extends State<QrMatchScannerScreen> {
         setState(() => _isProcessing = false);
         _scannerController.start();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Error connecting to match. Check match code and try again.'),
-            backgroundColor: AppTheme.errorRed,
-          ),
+          const SnackBar(content: Text('Error loading match invite. Please try again.'), backgroundColor: AppTheme.errorRed),
         );
       }
     }
   }
 
-  void _showJoinSuccessDialog({
-    required int matchId,
-    required String matchCode,
-    required String teamAName,
-    required String teamBName,
-    required int teamBId,
-  }) {
-    showDialog(
+  void _showMatchInviteBottomSheet(Map<String, dynamic> invite, String matchCode) {
+    int? chosenTeamId = _selectedTeamId;
+    final hostTeam = invite['host_team_name'] ?? 'Host Team';
+    final venue = invite['venue_name'] ?? 'Cricket Ground';
+    final overs = invite['overs_limit'] ?? 10;
+    final ballType = invite['ball_type_label'] ?? '🎾 Tennis Ball';
+    final isScheduled = invite['is_scheduled'] == true;
+    final matchDate = invite['match_date'];
+    final matchTime = invite['match_time'];
+    final matchId = invite['match_id'] as int? ?? 0;
+
+    showModalBottomSheet(
       context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.cardBg,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: const BorderSide(color: AppTheme.primaryGold, width: 1.5),
-        ),
-        title: Row(
-          children: [
-            const Icon(Icons.check_circle, color: AppTheme.successGreen, size: 26),
-            const SizedBox(width: 8),
-            Text(
-              'Connected to Match! 🎉',
-              style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '$teamAName vs $teamBName',
-              style: GoogleFonts.outfit(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Match PIN: $matchCode',
-              style: const TextStyle(color: AppTheme.primaryGold, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'You have successfully joined as Opponent Team! What would you like to do next?',
-              style: TextStyle(color: AppTheme.textMuted, fontSize: 13),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.pop(context);
-            },
-            child: const Text('Back to Home', style: TextStyle(color: AppTheme.textMuted)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryGold,
-              foregroundColor: const Color(0xFF070710),
-            ),
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => PlayingXiSelectorScreen(
-                    matchId: matchId,
-                    teamId: teamBId,
-                    teamName: teamBName,
+      backgroundColor: AppTheme.cardBg,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          return Padding(
+            padding: const EdgeInsets.all(22.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF00E676).withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.handshake, color: Color(0xFF00E676), size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'MATCH INVITATION 🏏',
+                            style: GoogleFonts.outfit(color: const Color(0xFF00E676), fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          Text(
+                            'Invited by $hostTeam',
+                            style: GoogleFonts.outfit(color: AppTheme.textPrimary, fontSize: 17, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: AppTheme.textMuted),
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _scannerController.start();
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Match Specs Card
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF131326),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppTheme.cardBorder),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.location_on, color: AppTheme.primaryGold, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(venue, style: const TextStyle(fontWeight: FontWeight.w600))),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Icon(Icons.sports_cricket, color: AppTheme.primaryGold, size: 16),
+                          const SizedBox(width: 8),
+                          Text('$overs Overs  •  $ballType', style: const TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+                        ],
+                      ),
+                      if (isScheduled && (matchDate != null || matchTime != null)) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.calendar_today, color: Color(0xFF00E676), size: 16),
+                            const SizedBox(width: 8),
+                            Text(
+                              '📅 ${matchDate ?? ''} at ${matchTime ?? ''}',
+                              style: const TextStyle(color: Color(0xFF00E676), fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-              );
-            },
-            child: const Text('Select Playing XI (11+3)', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
+                const SizedBox(height: 18),
+
+                // Select Opponent Team
+                Text(
+                  'Select Your Team to Join:',
+                  style: GoogleFonts.outfit(fontSize: 13, color: AppTheme.textMuted, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF131326),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.cardBorder),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int>(
+                      value: chosenTeamId,
+                      isExpanded: true,
+                      dropdownColor: AppTheme.cardBg,
+                      hint: const Text('Select Your Team', style: TextStyle(color: AppTheme.textMuted)),
+                      items: _myTeams.map<DropdownMenuItem<int>>((t) {
+                        final id = int.parse(t['id'].toString());
+                        final isMine = t['is_my_team'] == true;
+                        return DropdownMenuItem<int>(
+                          value: id,
+                          child: Text(
+                            "${t['name']} ${isMine ? '(My Team)' : ''}",
+                            style: TextStyle(
+                              color: isMine ? AppTheme.primaryGold : AppTheme.textPrimary,
+                              fontWeight: isMine ? FontWeight.bold : FontWeight.normal,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (val) {
+                        setModalState(() => chosenTeamId = val);
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Accept & Set Playing XI Button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF00E676),
+                      foregroundColor: const Color(0xFF070710),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    icon: const Icon(Icons.groups, color: Color(0xFF070710), size: 20),
+                    label: Text(
+                      'Accept & Set Playing XI (11+3)',
+                      style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 15),
+                    ),
+                    onPressed: () async {
+                      if (chosenTeamId == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Please select your team first')),
+                        );
+                        return;
+                      }
+
+                      Navigator.pop(ctx); // Close sheet
+
+                      // 1. Join Match on backend
+                      final joinRes = await _apiService.joinMatchQR(
+                        teamId: chosenTeamId!,
+                        matchCode: matchCode,
+                      );
+
+                      if (joinRes['success'] == true) {
+                        // 2. Open Playing XI Selector for Team B
+                        if (mounted) {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => PlayingXiSelectorScreen(
+                                matchId: matchId,
+                                teamId: chosenTeamId!,
+                                teamName: joinRes['team_b_name'] ?? 'My Team',
+                              ),
+                            ),
+                          );
+                        }
+                      } else {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(joinRes['message'] ?? 'Failed to connect'), backgroundColor: AppTheme.errorRed),
+                          );
+                          _scannerController.start();
+                        }
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _handleTournamentQr(int tournamentId) async {
+    setState(() => _isProcessing = true);
+    _scannerController.stop();
+
+    try {
+      final res = await _apiService.getTournamentHub(tournamentId);
+      if (mounted) {
+        setState(() => _isProcessing = false);
+        if (res['success'] == true) {
+          _showTournamentRegisterBottomSheet(res['tournament'], tournamentId);
+        } else {
+          _scannerController.start();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Tournament not found'), backgroundColor: AppTheme.errorRed),
+          );
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isProcessing = false);
+        _scannerController.start();
+      }
+    }
+  }
+
+  void _showTournamentRegisterBottomSheet(Map<String, dynamic> tourn, int tournamentId) {
+    int? regTeamId = _selectedTeamId;
+    final tName = tourn['name'] ?? 'Tournament';
+    final overs = tourn['default_overs'] ?? 20;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.cardBg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          return Padding(
+            padding: const EdgeInsets.all(22.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryGold.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.emoji_events, color: AppTheme.primaryGold, size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('TOURNAMENT REGISTRATION 🏆', style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontWeight: FontWeight.bold, fontSize: 12)),
+                          Text(tName, style: GoogleFonts.outfit(color: AppTheme.textPrimary, fontSize: 17, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: AppTheme.textMuted),
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _scannerController.start();
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Text('Format: $overs Overs  •  Round Robin / Knockout', style: const TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+                const SizedBox(height: 16),
+                Text('Select Your Team to Register:', style: GoogleFonts.outfit(fontSize: 13, color: AppTheme.textMuted, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF131326),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.cardBorder),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int>(
+                      value: regTeamId,
+                      isExpanded: true,
+                      dropdownColor: AppTheme.cardBg,
+                      hint: const Text('Select Team', style: TextStyle(color: AppTheme.textMuted)),
+                      items: _myTeams.map<DropdownMenuItem<int>>((t) {
+                        final id = int.parse(t['id'].toString());
+                        return DropdownMenuItem<int>(
+                          value: id,
+                          child: Text(t['name']),
+                        );
+                      }).toList(),
+                      onChanged: (val) => setModalState(() => regTeamId = val),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryGold,
+                      foregroundColor: const Color(0xFF070710),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () async {
+                      if (regTeamId == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select team')));
+                        return;
+                      }
+                      Navigator.pop(ctx);
+                      try {
+                        final regRes = await _apiService.dio.post('/tournament_ops.php?action=register_team', data: {
+                          'tournament_id': tournamentId,
+                          'team_id': regTeamId,
+                        });
+                        if (mounted) {
+                          if (regRes.data['success'] == true) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(regRes.data['message'] ?? 'Team Registered!'), backgroundColor: AppTheme.successGreen),
+                            );
+                            Navigator.pop(context);
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(regRes.data['message'] ?? 'Failed to register'), backgroundColor: AppTheme.errorRed),
+                            );
+                            _scannerController.start();
+                          }
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Network error registering team'), backgroundColor: AppTheme.errorRed),
+                          );
+                          _scannerController.start();
+                        }
+                      }
+                    },
+                    child: Text('Confirm & Register Team 🏆', style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 15)),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -304,10 +584,10 @@ class _QrMatchScannerScreenState extends State<QrMatchScannerScreen> {
                       return;
                     }
                     Navigator.pop(ctx);
-                    _joinMatch(code);
+                    _handleScannedPayload(code);
                   },
                   child: Text(
-                    'Join Match 🚀',
+                    'Search & Join Match 🚀',
                     style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
                 ),
@@ -325,8 +605,8 @@ class _QrMatchScannerScreenState extends State<QrMatchScannerScreen> {
       backgroundColor: Colors.black,
       appBar: AppBar(
         title: Text(
-          'SCAN MATCH QR',
-          style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontWeight: FontWeight.bold),
+          'SCAN MATCH & TOURNAMENT QR',
+          style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontWeight: FontWeight.bold, fontSize: 16),
         ),
         backgroundColor: Colors.black,
         elevation: 0,
@@ -362,7 +642,7 @@ class _QrMatchScannerScreenState extends State<QrMatchScannerScreen> {
                             value: _selectedTeamId,
                             isExpanded: true,
                             dropdownColor: AppTheme.cardBg,
-                            hint: const Text('Select Your Opponent Team', style: TextStyle(color: AppTheme.textMuted)),
+                            hint: const Text('Select Your Default Team', style: TextStyle(color: AppTheme.textMuted)),
                             items: _myTeams.map<DropdownMenuItem<int>>((t) {
                               final id = int.parse(t['id'].toString());
                               final isMine = t['is_my_team'] == true;
@@ -407,7 +687,7 @@ class _QrMatchScannerScreenState extends State<QrMatchScannerScreen> {
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       BoxShadow(
-                        color: AppTheme.primaryGold.withOpacity(0.2),
+                        color: AppTheme.primaryGold.withValues(alpha: 0.2),
                         blurRadius: 20,
                         spreadRadius: 2,
                       ),
@@ -421,12 +701,12 @@ class _QrMatchScannerScreenState extends State<QrMatchScannerScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.75),
+                      color: Colors.black.withValues(alpha: 0.75),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppTheme.primaryGold.withOpacity(0.5)),
+                      border: Border.all(color: AppTheme.primaryGold.withValues(alpha: 0.5)),
                     ),
                     child: Text(
-                      'Point camera at Opponent Match QR Code',
+                      'Scan Match QR / Tournament QR Code',
                       style: GoogleFonts.outfit(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
                     ),
                   ),
@@ -443,7 +723,7 @@ class _QrMatchScannerScreenState extends State<QrMatchScannerScreen> {
                           const CircularProgressIndicator(color: AppTheme.primaryGold),
                           const SizedBox(height: 16),
                           Text(
-                            'Connecting to Match...',
+                            'Loading Details...',
                             style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontSize: 16, fontWeight: FontWeight.bold),
                           ),
                         ],
@@ -466,11 +746,11 @@ class _QrMatchScannerScreenState extends State<QrMatchScannerScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        'Cannot scan QR code?',
+                        'Have a 6-digit Match PIN?',
                         style: GoogleFonts.outfit(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.bold),
                       ),
                       const Text(
-                        'Type 6-digit Match PIN directly',
+                        'Tap here to enter PIN directly',
                         style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
                       ),
                     ],

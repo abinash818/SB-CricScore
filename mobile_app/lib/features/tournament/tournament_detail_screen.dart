@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../core/api_service.dart';
 import '../match/match_create_screen.dart';
 import '../match/live_match_viewer_screen.dart';
@@ -163,6 +165,79 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> with Si
     );
   }
 
+  void _showTournamentQrDialog() {
+    final tName = _tournament?['name'] ?? 'Tournament';
+    final qrPayload = 'sbcric_tourn:${widget.tournamentId}';
+    final shareLink = 'https://sbastro.com/tournament/pages/tournament.php?tour_id=${widget.tournamentId}&register=1';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF121222),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: Color(0xFFDFBA73), width: 1.5),
+        ),
+        title: Text(
+          'Tournament QR & Registration 🏆',
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Color(0xFFDFBA73), fontWeight: FontWeight.bold, fontSize: 17),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              tName,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: QrImageView(
+                data: qrPayload,
+                version: QrVersions.auto,
+                size: 160.0,
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Team Captains can scan this QR in SB CricScore App or use the WhatsApp link to register their team & squad directly!',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF25D366),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: const Icon(Icons.share, size: 18),
+              label: const Text('Share Registration Link on WhatsApp', style: TextStyle(fontWeight: FontWeight.bold)),
+              onPressed: () {
+                Share.share(
+                  '🏆 Register your Cricket Team for $tName!\nScan QR in SB CricScore App or Register Online:\n$shareLink',
+                  subject: 'Tournament Team Registration',
+                );
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close', style: TextStyle(color: Colors.white60)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     const bgDark = Color(0xFF070710);
@@ -186,6 +261,11 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> with Si
           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.qr_code, color: goldColor),
+            tooltip: 'Tournament Registration QR',
+            onPressed: _showTournamentQrDialog,
+          ),
           IconButton(
             icon: const Icon(Icons.emoji_events, color: goldColor),
             tooltip: 'Leaderboard',

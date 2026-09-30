@@ -143,12 +143,17 @@ if ($action === 'get') {
             return strcmp($x['team'], $y['team']);
         });
 
+        $shareLink = "https://sbastro.com/tournament/pages/tournament.php?tour_id={$tid}&register=1";
+        $qrPayload = "sbcric_tourn:{$tid}";
+
         echo json_encode([
             'success'      => true,
             'tournament'   => $tournament,
             'teams'        => $teams,
             'matches'      => $matches,
-            'points_table' => $pointsTable
+            'points_table' => $pointsTable,
+            'share_link'   => $shareLink,
+            'qr_payload'   => $qrPayload,
         ]);
         exit;
     } catch (Throwable $e) {
@@ -278,5 +283,126 @@ if ($action === 'generate_fixtures') {
     exit;
 }
 
+// ── 5. REGISTER TEAM TO TOURNAMENT VIA QR / LINK ────────────────────────────
+if ($action === 'register_team') {
+    $input = json_decode(file_get_contents('php://input'), true) ?? $_POST;
+    $tid   = (int)($input['tournament_id'] ?? 0);
+    $existingTeamId = (int)($input['team_id'] ?? 0);
+    $teamName = trim($input['team_name'] ?? '');
+    $captainName = trim($input['captain_name'] ?? '');
+    $captainMobile = trim($input['captain_mobile'] ?? '');
+    $playerNames = $input['player_names'] ?? [];
+
+    if ($tid <= 0) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'tournament_id is required']);
+        exit;
+    }
+
+    try {
+        $tStmt = $pdo->prepare("SELECT * FROM tournaments WHERE id = ?");
+        $tStmt->execute([$tid]);
+        $tournament = $tStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$tournament) {
+            http_response_code(404);
+            echo json_encode(['success' => false, 'message' => 'Tournament not found']);
+            exit;
+        }
+
+        $pdo->beginTransaction();
+
+        $registeredTeamId = 0;
+
+        // Option A: Clone an existing team into this tournament
+        if ($existingTeamId > 0) {
+            $exStmt = $pdo->prepare("SELECT * FROM teams WHERE id = ?");
+            $exStmt->execute([$existingTeamId]);
+            $exTeam = $exStmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($exTeam) {
+                $teamName = $exTeam['name'];
+                $shortName = $exTeam['short_name'];
+                $icon = $exTeam['icon'] ?? 'shield';
+
+                $insTeam = $pdo->prepare("INSERT INTO teams (tournament_id, name, short_name, icon) VALUES (?, ?, ?, ?)");
+                $insTeam->execute([$tid, $teamName, $shortName, $icon]);
+                $registeredTeamId = (int)$pdo->lastInsertId();
+
+                // Clone Squad Players
+                $pStmt = $pdo->prepare("SELECT * FROM players WHERE team_id = ?");
+                $pStmt->execute([$existingTeamId]);
+                $squad = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+
+                $insP = $pdo->prepare("INSERT INTO players (team_id, name, role, batting_style, bowling_style, jersey_number, is_captain, mobile) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                foreach ($squad as $p) {
+                    $insP->execute([
+                        $registeredTeamId,
+                        $p['name'],
+                        $p['role'] ?? 'BAT',
+                        $p['batting_style'] ?? 'Right Hand Bat',
+                        $p['bowling_style'] ?? 'Right Arm Medium',
+                        $p['jersey_number'] ?? '',
+                        (int)($p['is_captain'] ?? 0),
+                        $p['mobile'] ?? ''
+                    ]);
+                }
+            }
+        }
+
+        // Option B: Register new team with names
+        if ($registeredTeamId <= 0) {
+            if (empty($teamName)) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'message' => 'Team Name is required']);
+                exit;
+            }
+
+            $words = explode(' ', $teamName);
+            $shortName = strtoupper(substr($teamName, 0, 3));
+            if (count($words) >= 2) {
+                $shortName = strtoupper(substr($words[0], 0, 1) . substr($words[1], 0, 1));
+            }
+
+            $insTeam = $pdo->prepare("INSERT INTO teams (tournament_id, name, short_name, icon) VALUES (?, ?, ?, 'shield')");
+            $insTeam->execute([$tid, $teamName, $shortName]);
+            $registeredTeamId = (int)$pdo->lastInsertId();
+
+            if (!empty($captainName)) {
+                $insCap = $pdo->prepare("INSERT INTO players (team_id, name, role, is_captain, mobile) VALUES (?, ?, 'All-Rounder', 1, ?)");
+                $insCap->execute([$registeredTeamId, $captainName, $captainMobile]);
+            }
+
+            if (!empty($playerNames) && is_array($playerNames)) {
+                $insP = $pdo->prepare("INSERT INTO players (team_id, name, role) VALUES (?, ?, 'BAT')");
+                foreach ($playerNames as $pname) {
+                    $pname = trim($pname);
+                    if (!empty($pname) && $pname !== $captainName) {
+                        $insP->execute([$registeredTeamId, $pname]);
+                    }
+                }
+            }
+        }
+
+        $pdo->commit();
+
+        echo json_encode([
+            'success'       => true,
+            'message'       => "Team '{$teamName}' successfully registered for {$tournament['name']}! 🏆",
+            'tournament_id' => $tid,
+            'team_id'       => $registeredTeamId,
+            'team_name'     => $teamName
+        ]);
+        exit;
+
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        http_response_code(500);
+        echo json_encode(['success' => false, 'message' => 'Registration error: ' . $e->getMessage()]);
+        exit;
+    }
+}
+
 http_response_code(400);
 echo json_encode(['success' => false, 'message' => 'Invalid action']);
+

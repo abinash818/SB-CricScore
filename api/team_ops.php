@@ -70,15 +70,24 @@ if ($action === 'get') {
         exit;
     }
 
-    // Squad Players
+    // Squad Players (with privacy masking on mobile numbers)
     $pStmt = $pdo->prepare("SELECT * FROM players WHERE team_id = ? ORDER BY is_captain DESC, id ASC");
     $pStmt->execute([$teamId]);
-    $players = $pStmt->fetchAll();
+    $players = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $sanitizedPlayers = [];
+    foreach ($players as $p) {
+        $rawMob = $p['mobile'] ?? '';
+        $digits = preg_replace('/\D+/', '', $rawMob);
+        $maskedMob = (strlen($digits) >= 10) ? substr($digits, 0, 2) . '******' . substr($digits, -2) : (empty($rawMob) ? '' : '******');
+        $p['mobile'] = $maskedMob;
+        $sanitizedPlayers[] = $p;
+    }
 
     echo json_encode([
         'success' => true,
         'team'    => $team,
-        'squad'   => $players,
+        'squad'   => $sanitizedPlayers,
     ]);
     exit;
 }
@@ -408,32 +417,71 @@ if ($action === 'my_teams') {
 // ── 9. DUAL PLAYER SEARCH (Phone Number or Name) ───────────────────────────
 if ($action === 'search_players') {
     $q = trim($_GET['q'] ?? '');
-    if (empty($q) || strlen($q) < 2) {
+    if (empty($q)) {
         echo json_encode(['success' => true, 'players' => []]);
         exit;
     }
 
     $rawQ = $q;
-    // Extract pure digits for mobile number search
     $digitsOnly = preg_replace('/\D+/', '', $q);
-    $last10 = (strlen($digitsOnly) >= 10) ? substr($digitsOnly, -10) : $digitsOnly;
+    $hasDigits = !empty($digitsOnly);
 
+    // If searching by phone number, STRICTLY REQUIRE 10 digits to prevent scraping/partial harvesting
+    if ($hasDigits && strlen($digitsOnly) < 10) {
+        echo json_encode([
+            'success'  => true,
+            'players'  => [],
+            'message'  => 'Please enter full 10-digit mobile number to search by phone.'
+        ]);
+        exit;
+    }
+
+    // If searching by Name only, require at least 3 characters
+    if (!$hasDigits && strlen($rawQ) < 3) {
+        echo json_encode([
+            'success'  => true,
+            'players'  => [],
+            'message'  => 'Type at least 3 letters to search by player name.'
+        ]);
+        exit;
+    }
+
+    $last10 = (strlen($digitsOnly) >= 10) ? substr($digitsOnly, -10) : '';
     $likeName = '%' . strtolower($rawQ) . '%';
-    $likeMobile = !empty($last10) ? '%' . $last10 . '%' : '%' . $rawQ . '%';
+    
+    $whereParts = [];
+    $params = [];
+
+    if (!empty($last10)) {
+        $whereParts[] = "(mobile = ? OR mobile LIKE ?)";
+        $params[] = $last10;
+        $params[] = '%' . $last10;
+    }
+    if (!$hasDigits && strlen($rawQ) >= 3) {
+        $whereParts[] = "LOWER(name) LIKE ?";
+        $params[] = $likeName;
+    }
+
+    if (empty($whereParts)) {
+        echo json_encode(['success' => true, 'players' => []]);
+        exit;
+    }
+
+    $whereSql = '(' . implode(' OR ', $whereParts) . ')';
 
     $playersList = [];
     $seenMobiles = [];
     $seenNames = [];
 
-    // 1. First, search registered App Users (app_users table)
+    // 1. Search registered App Users (app_users table)
     try {
         $uStmt = $pdo->prepare("
             SELECT id, name, mobile, role, batting_style, bowling_style, jersey_number, profile_pic, city
             FROM app_users
-            WHERE LOWER(name) LIKE ? OR mobile LIKE ?
-            ORDER BY id DESC LIMIT 20
+            WHERE {$whereSql}
+            ORDER BY id DESC LIMIT 10
         ");
-        $uStmt->execute([$likeName, $likeMobile]);
+        $uStmt->execute($params);
         $appUsers = $uStmt->fetchAll(PDO::FETCH_ASSOC);
 
         foreach ($appUsers as $u) {
@@ -442,10 +490,13 @@ if ($action === 'search_players') {
             if (!empty($mob)) $seenMobiles[$mob] = true;
             if (!empty($nm)) $seenNames[strtolower($nm)] = true;
 
+            $mobDigits = preg_replace('/\D+/', '', $mob);
+            $maskedMob = (strlen($mobDigits) >= 10) ? substr($mobDigits, 0, 2) . '******' . substr($mobDigits, -2) : (empty($mob) ? '' : '******');
+
             $playersList[] = [
                 'id'            => (int)$u['id'],
-                'name'          => !empty($u['name']) ? $u['name'] : 'Player (' . $mob . ')',
-                'mobile'        => $mob,
+                'name'          => !empty($u['name']) ? $u['name'] : 'Player (' . $maskedMob . ')',
+                'mobile'        => $maskedMob,
                 'role'          => !empty($u['role']) ? $u['role'] : 'All-Rounder',
                 'batting_style' => !empty($u['batting_style']) ? $u['batting_style'] : 'Right Hand Bat',
                 'bowling_style' => !empty($u['bowling_style']) ? $u['bowling_style'] : 'Right Arm Medium',
@@ -456,9 +507,7 @@ if ($action === 'search_players') {
                 'source'        => 'app_user',
             ];
         }
-    } catch (\Throwable $e) {
-        // Table might not exist or query error, continue
-    }
+    } catch (\Throwable $e) {}
 
     // 2. Next, search Tournament Players (players table)
     try {
@@ -467,27 +516,29 @@ if ($action === 'search_players') {
                    t.id as team_id, t.name as team_name
             FROM players p
             LEFT JOIN teams t ON t.id = p.team_id
-            WHERE LOWER(p.name) LIKE ? OR p.mobile LIKE ?
-            ORDER BY p.id DESC LIMIT 20
+            WHERE {$whereSql}
+            ORDER BY p.id DESC LIMIT 10
         ");
-        $pStmt->execute([$likeName, $likeMobile]);
+        $pStmt->execute($params);
         $tournamentPlayers = $pStmt->fetchAll(PDO::FETCH_ASSOC);
 
         foreach ($tournamentPlayers as $p) {
             $mob = trim($p['mobile'] ?? '');
             $nm = trim($p['name'] ?? '');
 
-            // If already added from app_users, skip duplicate
             if (!empty($mob) && isset($seenMobiles[$mob])) continue;
             if (empty($mob) && !empty($nm) && isset($seenNames[strtolower($nm)])) continue;
 
             if (!empty($mob)) $seenMobiles[$mob] = true;
             if (!empty($nm)) $seenNames[strtolower($nm)] = true;
 
+            $mobDigits = preg_replace('/\D+/', '', $mob);
+            $maskedMob = (strlen($mobDigits) >= 10) ? substr($mobDigits, 0, 2) . '******' . substr($mobDigits, -2) : (empty($mob) ? '' : '******');
+
             $playersList[] = [
                 'id'            => (int)$p['id'],
                 'name'          => $p['name'],
-                'mobile'        => $mob,
+                'mobile'        => $maskedMob,
                 'role'          => !empty($p['role']) ? $p['role'] : 'BAT',
                 'batting_style' => !empty($p['batting_style']) ? $p['batting_style'] : 'Right Hand Bat',
                 'bowling_style' => !empty($p['bowling_style']) ? $p['bowling_style'] : 'Right Arm Medium',
@@ -497,9 +548,7 @@ if ($action === 'search_players') {
                 'source'        => 'tournament_player',
             ];
         }
-    } catch (\Throwable $e) {
-        // Continue
-    }
+    } catch (\Throwable $e) {}
 
     echo json_encode(['success' => true, 'query' => $q, 'players' => $playersList]);
     exit;
