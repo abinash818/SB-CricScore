@@ -739,6 +739,7 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                       )
                     else
                       DropdownButtonFormField<int>(
+                        isExpanded: true,
                         initialValue: _selectedTeamA,
                         decoration: const InputDecoration(
                           labelText: 'Host Team (Team A) * [Leader / Co-Leader]',
@@ -753,7 +754,13 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                             value: int.parse(t['id'].toString()),
                             child: Row(
                               children: [
-                                Text(t['name'] ?? 'Team', style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryGold)),
+                                Flexible(
+                                  child: Text(
+                                    t['name'] ?? 'Team',
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryGold),
+                                  ),
+                                ),
                                 const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -816,6 +823,7 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
 
                     // Opponent Team (Can be QR Invite or selected)
                     DropdownButtonFormField<int?>(
+                      isExpanded: true,
                       initialValue: _selectedTeamB,
                       decoration: const InputDecoration(
                         labelText: 'Opponent Team (Team B)',
@@ -828,7 +836,13 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                             children: [
                               Icon(Icons.qr_code_scanner, size: 18, color: Color(0xFF00E676)),
                               SizedBox(width: 8),
-                              Text('🔗 Opponent Joins via QR / PIN (Recommended)', style: TextStyle(color: Color(0xFF00E676), fontWeight: FontWeight.bold)),
+                              Expanded(
+                                child: Text(
+                                  '🔗 Opponent Joins via QR / PIN',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: Color(0xFF00E676), fontWeight: FontWeight.bold),
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -836,7 +850,10 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                           final int id = int.parse(t['id'].toString());
                           return DropdownMenuItem<int?>(
                             value: id,
-                            child: Text("${t['name']} (Invite Only)"),
+                            child: Text(
+                              "${t['name']} (Invite Only)",
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           );
                         }),
                       ],
