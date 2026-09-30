@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/api_service.dart';
 import '../../core/theme.dart';
+import '../team/team_create_screen.dart';
 import 'toss_screen.dart';
 import 'qr_match_scanner_screen.dart';
 
@@ -25,6 +28,7 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
   final TextEditingController _wicketsController = TextEditingController(text: '10');
 
   List<dynamic> _teams = [];
+  List<dynamic> _hostEligibleTeams = [];
   bool _isLoading = true;
   bool _isCreating = false;
 
@@ -63,6 +67,15 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
           _myTeams = myRes['teams'] as List? ?? [];
           final allTeams = allRes.data['teams'] as List? ?? [];
 
+          // Host can only be a team where user is Leader, Co-Leader, or Owner
+          _hostEligibleTeams = _myTeams.where((t) {
+            return t['can_host_match'] != false || t['is_leader'] == true || t['is_co_leader'] == true;
+          }).toList();
+
+          if (_hostEligibleTeams.isEmpty && _myTeams.isNotEmpty) {
+            _hostEligibleTeams = _myTeams;
+          }
+
           final Map<int, dynamic> teamMap = {};
           for (var t in _myTeams) {
             teamMap[int.parse(t['id'].toString())] = {...t, 'is_my_team': true};
@@ -77,8 +90,8 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
           _teams = teamMap.values.toList();
 
           // Auto-select user's own team for Team A if available
-          if (_myTeams.isNotEmpty && _selectedTeamA == null) {
-            _selectedTeamA = int.parse(_myTeams.first['id'].toString());
+          if (_hostEligibleTeams.isNotEmpty && _selectedTeamA == null) {
+            _selectedTeamA = int.parse(_hostEligibleTeams.first['id'].toString());
           }
 
           _isLoading = false;
@@ -239,17 +252,36 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                   textAlign: TextAlign.center,
                   style: GoogleFonts.outfit(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 10),
+                // Match PIN Card
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
                     color: AppTheme.primaryGold.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: AppTheme.primaryGold.withValues(alpha: 0.4)),
                   ),
-                  child: Text(
-                    'Match PIN: $matchCode',
-                    style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontSize: 18, fontWeight: FontWeight.bold),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'PIN: $matchCode',
+                        style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Copy PIN',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        icon: const Icon(Icons.copy, size: 18, color: AppTheme.primaryGold),
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: matchCode));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Match PIN copied to clipboard! 📋'), backgroundColor: Colors.green),
+                          );
+                        },
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -268,28 +300,43 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  'Opponent Captain can scan this QR code or enter PIN in SB CricScore App to join!',
+                const Text(
+                  'Opponent Captain can scan this QR code or enter PIN in SB CricScore to join!',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
                 ),
                 const SizedBox(height: 14),
 
                 // WhatsApp Share Button
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF25D366),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF25D366),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.share, size: 18, color: Colors.white),
+                    label: const Text('Share Invite on WhatsApp', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: () async {
+                      final shareMsg = '🏏 Match Invite from $teamAName!\nMatch PIN: $matchCode\nGround: ${_venueController.text.trim()}\nJoin Link: $shareLink';
+                      try {
+                        final waUrl = Uri.parse('https://api.whatsapp.com/send?text=${Uri.encodeComponent(shareMsg)}');
+                        if (await canLaunchUrl(waUrl)) {
+                          await launchUrl(waUrl, mode: LaunchMode.externalApplication);
+                        } else {
+                          await Share.share(shareMsg, subject: 'SB CricScore Match Invite');
+                        }
+                      } catch (_) {
+                        Clipboard.setData(ClipboardData(text: shareMsg));
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Invite copied to clipboard! 📋'), backgroundColor: Colors.green),
+                          );
+                        }
+                      }
+                    },
                   ),
-                  icon: const Icon(Icons.share, size: 18, color: Colors.white),
-                  label: const Text('Share Match Link on WhatsApp', style: TextStyle(fontWeight: FontWeight.bold)),
-                  onPressed: () {
-                    Share.share(
-                      '🏏 Match Invite from $teamAName!\nMatch Code: $matchCode\nGround: ${_venueController.text.trim()}\nJoin Link: $shareLink',
-                      subject: 'SB CricScore Match Invite',
-                    );
-                  },
                 ),
               ],
             ),
@@ -365,14 +412,22 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
 
       if (mounted) {
         setState(() => _isCreating = false);
-        if (res.data['success'] == true || res.data['ok'] == true) {
-          final matchId = res.data['match_id'];
-          final matchCode = res.data['match_code'] ?? 'SB1234';
-          final shareLink = res.data['share_link'] ?? '';
-          final teamAName = _teams.firstWhere((t) => int.parse(t['id'].toString()) == _selectedTeamA)['name'];
-          final teamBName = _selectedTeamB != null
-              ? _teams.firstWhere((t) => int.parse(t['id'].toString()) == _selectedTeamB, orElse: () => {'name': ''})['name']
-              : '';
+        if (res.data != null && (res.data['success'] == true || res.data['ok'] == true)) {
+          final int matchId = int.tryParse(res.data['match_id'].toString()) ?? 0;
+          final String matchCode = res.data['match_code']?.toString() ?? 'SB1234';
+          final String shareLink = res.data['share_link']?.toString() ?? '';
+          
+          String teamAName = 'Team A';
+          try {
+            teamAName = _teams.firstWhere((t) => int.parse(t['id'].toString()) == _selectedTeamA)['name'];
+          } catch (_) {}
+
+          String teamBName = '';
+          if (_selectedTeamB != null) {
+            try {
+              teamBName = _teams.firstWhere((t) => int.parse(t['id'].toString()) == _selectedTeamB)['name'];
+            } catch (_) {}
+          }
 
           _showMatchCreatedDialog(
             matchId: matchId,
@@ -384,7 +439,7 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
           );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(res.data['message'] ?? 'Failed to create match'), backgroundColor: AppTheme.errorRed),
+            SnackBar(content: Text(res.data?['message']?.toString() ?? 'Failed to create match'), backgroundColor: AppTheme.errorRed),
           );
         }
       }
@@ -621,34 +676,109 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                     ],
 
                     // ── Teams Selection ──
-                    Text('Select Teams', style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.primaryGold)),
-                    const SizedBox(height: 10),
-
-                    // Host Team
-                    DropdownButtonFormField<int>(
-                      initialValue: _selectedTeamA,
-                      decoration: const InputDecoration(
-                        labelText: 'Host Team (Team A) *',
-                        prefixIcon: Icon(Icons.shield_outlined, color: AppTheme.primaryGold),
-                      ),
-                      items: _teams.map<DropdownMenuItem<int>>((t) {
-                        final bool isMyTeam = t['is_my_team'] == true;
-                        return DropdownMenuItem<int>(
-                          value: int.parse(t['id'].toString()),
-                          child: Text(
-                            "${t['name']} ${isMyTeam ? '⭐ (My Team)' : ''}",
-                            style: TextStyle(
-                              fontWeight: isMyTeam ? FontWeight.bold : FontWeight.normal,
-                              color: isMyTeam ? AppTheme.primaryGold : AppTheme.textPrimary,
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (val) => setState(() {
-                        _selectedTeamA = val;
-                        _hostPlayingXiIds.clear();
-                      }),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Select Teams', style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.primaryGold)),
+                        TextButton.icon(
+                          style: TextButton.styleFrom(foregroundColor: AppTheme.primaryGold, padding: EdgeInsets.zero),
+                          icon: const Icon(Icons.add_circle_outline, size: 16),
+                          label: const Text('Create My Team', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          onPressed: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const TeamCreateScreen()),
+                            );
+                            _fetchTeams();
+                          },
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 6),
+
+                    // Host Team (Restricted to user's authorized teams)
+                    if (_hostEligibleTeams.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryGold.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.primaryGold.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.shield_outlined, color: AppTheme.primaryGold, size: 28),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('No Hosting Team Found', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                                  const SizedBox(height: 2),
+                                  const Text('You must be a Leader or Co-Leader to host matches.', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                                ],
+                              ),
+                            ),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.primaryGold,
+                                foregroundColor: const Color(0xFF070710),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              ),
+                              onPressed: () async {
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const TeamCreateScreen()),
+                                );
+                                _fetchTeams();
+                              },
+                              child: const Text('Create Team', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      DropdownButtonFormField<int>(
+                        initialValue: _selectedTeamA,
+                        decoration: const InputDecoration(
+                          labelText: 'Host Team (Team A) * [Leader / Co-Leader]',
+                          prefixIcon: Icon(Icons.shield_outlined, color: AppTheme.primaryGold),
+                        ),
+                        items: _hostEligibleTeams.map<DropdownMenuItem<int>>((t) {
+                          final String role = (t['user_role'] ?? 'leader').toString().toLowerCase();
+                          final bool isLeader = (role == 'leader' || t['is_leader'] == true);
+                          final String roleBadge = isLeader ? '👑 Leader' : '⭐ Co-Leader';
+
+                          return DropdownMenuItem<int>(
+                            value: int.parse(t['id'].toString()),
+                            child: Row(
+                              children: [
+                                Text(t['name'] ?? 'Team', style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryGold)),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isLeader ? AppTheme.primaryGold.withValues(alpha: 0.2) : Colors.purpleAccent.withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    roleBadge,
+                                    style: TextStyle(
+                                      color: isLeader ? AppTheme.primaryGold : Colors.purpleAccent,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (val) => setState(() {
+                          _selectedTeamA = val;
+                          _hostPlayingXiIds.clear();
+                        }),
+                      ),
                     const SizedBox(height: 8),
 
                     // Host Team Squad Selector button
@@ -696,17 +826,17 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                           value: null,
                           child: Row(
                             children: [
-                              Icon(Icons.qr_code, size: 18, color: Color(0xFF00E676)),
+                              Icon(Icons.qr_code_scanner, size: 18, color: Color(0xFF00E676)),
                               SizedBox(width: 8),
-                              Text('🔗 Opponent Joins via QR / Link', style: TextStyle(color: Color(0xFF00E676), fontWeight: FontWeight.bold)),
+                              Text('🔗 Opponent Joins via QR / PIN (Recommended)', style: TextStyle(color: Color(0xFF00E676), fontWeight: FontWeight.bold)),
                             ],
                           ),
                         ),
-                        ..._teams.map<DropdownMenuItem<int?>>((t) {
+                        ..._teams.where((t) => int.parse(t['id'].toString()) != _selectedTeamA).map<DropdownMenuItem<int?>>((t) {
                           final int id = int.parse(t['id'].toString());
                           return DropdownMenuItem<int?>(
                             value: id,
-                            child: Text(t['name'] ?? 'Team'),
+                            child: Text("${t['name']} (Invite Only)"),
                           );
                         }),
                       ],

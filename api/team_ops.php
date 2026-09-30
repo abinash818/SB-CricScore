@@ -70,8 +70,20 @@ if ($action === 'get') {
         exit;
     }
 
-    // Squad Players (with privacy masking on mobile numbers)
-    $pStmt = $pdo->prepare("SELECT * FROM players WHERE team_id = ? ORDER BY is_captain DESC, id ASC");
+    // Auto-migrate team_role column if missing
+    try {
+        $cols = [];
+        $colStmt = $pdo->query("SHOW COLUMNS FROM `players`");
+        while ($c = $colStmt->fetch(PDO::FETCH_ASSOC)) {
+            $cols[strtolower($c['Field'])] = true;
+        }
+        if (!isset($cols['team_role'])) {
+            $pdo->exec("ALTER TABLE players ADD COLUMN team_role VARCHAR(20) DEFAULT 'member'");
+        }
+    } catch (Throwable $e) {}
+
+    // Squad Players (with privacy masking on mobile numbers & team_role)
+    $pStmt = $pdo->prepare("SELECT * FROM players WHERE team_id = ? ORDER BY is_captain DESC, (team_role = 'leader') DESC, (team_role = 'co_leader') DESC, id ASC");
     $pStmt->execute([$teamId]);
     $players = $pStmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -81,6 +93,9 @@ if ($action === 'get') {
         $digits = preg_replace('/\D+/', '', $rawMob);
         $maskedMob = (strlen($digits) >= 10) ? substr($digits, 0, 2) . '******' . substr($digits, -2) : (empty($rawMob) ? '' : '******');
         $p['mobile'] = $maskedMob;
+        if (empty($p['team_role'])) {
+            $p['team_role'] = (!empty($p['is_captain']) && (int)$p['is_captain'] === 1) ? 'leader' : 'member';
+        }
         $sanitizedPlayers[] = $p;
     }
 
@@ -410,7 +425,37 @@ if ($action === 'my_teams') {
         $myTeams = $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    echo json_encode(['success' => true, 'teams' => $myTeams]);
+    $sanitizedMyTeams = [];
+    foreach ($myTeams as $t) {
+        $tId = (int)$t['id'];
+        $userRole = 'member';
+        $isOwner = (!empty($t['owner_id']) && $ownerId > 0 && (int)$t['owner_id'] === $ownerId);
+
+        if ($isOwner) {
+            $userRole = 'leader';
+        } else if (!empty($mobile) || !empty($playerName)) {
+            $chkRole = $pdo->prepare("SELECT is_captain, team_role FROM players WHERE team_id = ? AND (mobile = ? OR LOWER(name) = ?) LIMIT 1");
+            $chkRole->execute([$tId, $mobile, strtolower($playerName)]);
+            $pRole = $chkRole->fetch(PDO::FETCH_ASSOC);
+            if ($pRole) {
+                if ((int)($pRole['is_captain'] ?? 0) === 1 || ($pRole['team_role'] ?? '') === 'leader') {
+                    $userRole = 'leader';
+                } else if (($pRole['team_role'] ?? '') === 'co_leader') {
+                    $userRole = 'co_leader';
+                }
+            }
+        } else {
+            $userRole = 'leader'; // Default fallback for newly created local teams
+        }
+
+        $t['user_role'] = $userRole;
+        $t['is_leader'] = ($userRole === 'leader');
+        $t['is_co_leader'] = ($userRole === 'co_leader');
+        $t['can_host_match'] = in_array($userRole, ['leader', 'co_leader']);
+        $sanitizedMyTeams[] = $t;
+    }
+
+    echo json_encode(['success' => true, 'teams' => $sanitizedMyTeams]);
     exit;
 }
 
@@ -567,11 +612,50 @@ if ($action === 'set_captain') {
         exit;
     }
 
-    $pdo->prepare("UPDATE players SET is_captain = 0 WHERE team_id = ?")->execute([$teamId]);
-    $stmt = $pdo->prepare("UPDATE players SET is_captain = 1 WHERE id = ? AND team_id = ?");
+    $pdo->prepare("UPDATE players SET is_captain = 0, team_role = 'member' WHERE team_id = ? AND team_role = 'leader'")->execute([$teamId]);
+    $stmt = $pdo->prepare("UPDATE players SET is_captain = 1, team_role = 'leader' WHERE id = ? AND team_id = ?");
     $stmt->execute([$playerId, $teamId]);
 
-    echo json_encode(['success' => true, 'message' => 'Captain updated successfully! 👑']);
+    echo json_encode(['success' => true, 'message' => 'Captain / Leader updated successfully! 👑']);
+    exit;
+}
+
+// ── 10B. SET CLAN / TEAM ROLE (Leader, Co-Leader, Member) ───────────────────
+if ($action === 'set_clan_role' || $action === 'set_member_role') {
+    $input    = json_decode(file_get_contents('php://input'), true) ?? $_POST;
+    $teamId   = (int)($input['team_id'] ?? 0);
+    $playerId = (int)($input['player_id'] ?? 0);
+    $newRole  = strtolower(trim($input['role'] ?? 'member')); // 'leader', 'co_leader', 'member'
+
+    if ($teamId <= 0 || $playerId <= 0) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'team_id and player_id are required']);
+        exit;
+    }
+
+    if (!in_array($newRole, ['leader', 'co_leader', 'member'])) {
+        $newRole = 'member';
+    }
+
+    // Auto-migrate team_role column if missing
+    try {
+        $pdo->exec("ALTER TABLE players ADD COLUMN team_role VARCHAR(20) DEFAULT 'member'");
+    } catch (Throwable $e) {}
+
+    if ($newRole === 'leader') {
+        // Demote previous leader to co_leader
+        $pdo->prepare("UPDATE players SET is_captain = 0, team_role = 'co_leader' WHERE team_id = ? AND (is_captain = 1 OR team_role = 'leader')")->execute([$teamId]);
+        $pdo->prepare("UPDATE players SET is_captain = 1, team_role = 'leader' WHERE id = ? AND team_id = ?")->execute([$playerId, $teamId]);
+        $msg = 'Player promoted to Team Leader 👑!';
+    } else if ($newRole === 'co_leader') {
+        $pdo->prepare("UPDATE players SET is_captain = 0, team_role = 'co_leader' WHERE id = ? AND team_id = ?")->execute([$playerId, $teamId]);
+        $msg = 'Player promoted to Co-Leader ⭐!';
+    } else {
+        $pdo->prepare("UPDATE players SET is_captain = 0, team_role = 'member' WHERE id = ? AND team_id = ?")->execute([$playerId, $teamId]);
+        $msg = 'Role updated to Member 🏏.';
+    }
+
+    echo json_encode(['success' => true, 'message' => $msg, 'team_role' => $newRole]);
     exit;
 }
 

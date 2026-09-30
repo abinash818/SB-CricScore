@@ -422,11 +422,21 @@ class ApiService {
     return response.data;
   }
 
-  // ── Set Captain ──
+  // ── Set Captain / Leader ──
   Future<Map<String, dynamic>> setCaptain(int teamId, int playerId) async {
     final response = await dio.post('/team_ops.php?action=set_captain', data: {
       'team_id': teamId,
       'player_id': playerId,
+    });
+    return response.data;
+  }
+
+  // ── Set Clan / Team Role (Leader, Co-Leader, Member) ──
+  Future<Map<String, dynamic>> setClanRole(int teamId, int playerId, String role) async {
+    final response = await dio.post('/team_ops.php?action=set_clan_role', data: {
+      'team_id': teamId,
+      'player_id': playerId,
+      'role': role,
     });
     return response.data;
   }

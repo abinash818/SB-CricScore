@@ -440,13 +440,33 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   }
 
 
+  Future<void> _handleSetClanRole(int playerId, String playerName, String role) async {
+    try {
+      final res = await _apiService.setClanRole(widget.teamId, playerId, role);
+      if (mounted) {
+        if (res['success'] == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(res['message'] ?? 'Role updated!'), backgroundColor: Colors.green),
+          );
+          _fetchTeamSquad();
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update role: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
+  }
+
   Future<void> _handleSetCaptain(int playerId, String playerName) async {
     try {
       final res = await _apiService.setCaptain(widget.teamId, playerId);
       if (mounted) {
         if (res['success'] == true) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('$playerName is now the Captain! 👑'), backgroundColor: Colors.green),
+            SnackBar(content: Text('$playerName is now the Team Leader / Captain! 👑'), backgroundColor: Colors.green),
           );
           _fetchTeamSquad();
         }
@@ -478,7 +498,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
         if (mounted) {
           if (res['success'] == true) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('$playerName removed from squad'), backgroundColor: Colors.orangeAccent),
+              SnackBar(content: Text('$playerName removed from squad'), backgroundColor: Colors.orange),
             );
             _fetchTeamSquad();
           }
@@ -636,24 +656,40 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
                 itemCount: _squad.length,
                 itemBuilder: (context, index) {
                   final player = _squad[index];
-                  final isCapt = (player['is_captain'] == 1 || player['is_captain'] == '1');
+                  final String teamRole = (player['team_role'] ?? ((player['is_captain'] == 1 || player['is_captain'] == '1') ? 'leader' : 'member')).toString().toLowerCase();
+                  final bool isLeader = (teamRole == 'leader' || player['is_captain'] == 1 || player['is_captain'] == '1');
+                  final bool isCoLeader = (teamRole == 'co_leader');
                   final playerId = int.tryParse(player['id'].toString()) ?? 0;
                   final pName = player['name'] ?? 'Player';
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
                     decoration: BoxDecoration(
-                      color: isCapt ? AppTheme.gold.withValues(alpha: 0.1) : AppTheme.cardBackground,
+                      color: isLeader
+                          ? AppTheme.gold.withValues(alpha: 0.12)
+                          : isCoLeader
+                              ? Colors.purpleAccent.withValues(alpha: 0.1)
+                              : AppTheme.cardBackground,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: isCapt ? AppTheme.gold : Colors.white10),
+                      border: Border.all(
+                        color: isLeader
+                            ? AppTheme.gold
+                            : isCoLeader
+                                ? Colors.purpleAccent.withValues(alpha: 0.6)
+                                : Colors.white10,
+                      ),
                     ),
                     child: ListTile(
                       leading: CircleAvatar(
-                        backgroundColor: isCapt ? AppTheme.gold : const Color(0xFF1E1E38),
+                        backgroundColor: isLeader
+                            ? AppTheme.gold
+                            : isCoLeader
+                                ? Colors.purpleAccent
+                                : const Color(0xFF1E1E38),
                         child: Text(
                           '${index + 1}',
                           style: TextStyle(
-                            color: isCapt ? Colors.black : Colors.white,
+                            color: (isLeader || isCoLeader) ? Colors.black : Colors.white,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -666,11 +702,17 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
                               style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: Colors.white),
                             ),
                           ),
-                          if (isCapt)
+                          if (isLeader)
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(color: Colors.amber, borderRadius: BorderRadius.circular(4)),
-                              child: const Text('👑 CAPTAIN', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 10)),
+                              child: const Text('👑 LEADER', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 10)),
+                            )
+                          else if (isCoLeader)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(color: Colors.purpleAccent, borderRadius: BorderRadius.circular(4)),
+                              child: const Text('⭐ CO-LEADER', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10)),
                             ),
                         ],
                       ),
@@ -682,21 +724,47 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
                         icon: const Icon(Icons.more_vert, color: Colors.white60),
                         color: const Color(0xFF1E1E38),
                         onSelected: (val) {
-                          if (val == 'captain') {
+                          if (val == 'leader') {
                             _handleSetCaptain(playerId, pName);
+                          } else if (val == 'co_leader') {
+                            _handleSetClanRole(playerId, pName, 'co_leader');
+                          } else if (val == 'member') {
+                            _handleSetClanRole(playerId, pName, 'member');
                           } else if (val == 'remove') {
                             _handleRemovePlayer(playerId, pName);
                           }
                         },
                         itemBuilder: (ctx) => [
-                          if (!isCapt)
+                          if (!isLeader)
                             const PopupMenuItem(
-                              value: 'captain',
+                              value: 'leader',
                               child: Row(
                                 children: [
                                   Icon(Icons.star, color: Colors.amber, size: 18),
                                   SizedBox(width: 8),
-                                  Text('Set as Captain', style: TextStyle(color: Colors.white)),
+                                  Text('Make Team Leader 👑', style: TextStyle(color: Colors.white)),
+                                ],
+                              ),
+                            ),
+                          if (!isCoLeader)
+                            const PopupMenuItem(
+                              value: 'co_leader',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.military_tech, color: Colors.purpleAccent, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Promote to Co-Leader ⭐', style: TextStyle(color: Colors.white)),
+                                ],
+                              ),
+                            ),
+                          if (isLeader || isCoLeader)
+                            const PopupMenuItem(
+                              value: 'member',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.person_outline, color: Colors.white70, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Set as Regular Member 🏏', style: TextStyle(color: Colors.white)),
                                 ],
                               ),
                             ),
