@@ -190,6 +190,7 @@ class _TossScreenState extends State<TossScreen> with SingleTickerProviderStateM
                 battingTeamName: battingTeamName,
                 bowlingTeamName: bowlingTeamName,
                 oversLimit: widget.oversLimit,
+                initialScorerName: _selectedScorerName,
               ),
             ),
             (route) => false,

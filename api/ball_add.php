@@ -96,15 +96,44 @@ if ((int)$inn['innings_no'] === 1) {
 
 $totals = calc_totals($pdo, $innings_id);
 
+$legal_balls = (int)($totals['legal'] ?? 0);
+$total_runs  = (int)($totals['runs'] ?? 0);
+$total_wkts  = (int)($totals['wkts'] ?? 0);
+
+$overs_limit   = (int)($inn['match_overs'] ?? 20);
+if ($overs_limit <= 0) $overs_limit = 20;
+$wickets_limit = (int)($inn['match_wickets'] ?? 10);
+if ($wickets_limit <= 0) $wickets_limit = 10;
+$max_balls     = $overs_limit * 6;
+
+$is_innings_complete = false;
+$is_match_ended      = false;
+
+if ((int)$inn['innings_no'] === 1) {
+    if ($legal_balls >= $max_balls || $total_wkts >= $wickets_limit) {
+        $is_innings_complete = true;
+    }
+} else if ((int)$inn['innings_no'] === 2) {
+    $target = (int)($inn['target'] ?? 0);
+    if (($target > 0 && $total_runs >= $target) || $legal_balls >= $max_balls || $total_wkts >= $wickets_limit) {
+        $is_innings_complete = true;
+        $is_match_ended = true;
+    }
+}
+
 // If current ball was a No-Ball, next ball is Free Hit!
 $is_next_free_hit = ($extras_type === 'nb') ? 1 : 0;
 
 echo json_encode([
-    'success'           => true,
-    'ok'                => true,
-    'seq'               => $next_seq,
-    'totals'            => $totals,
-    'is_free_hit'       => (bool)$is_free_hit,
-    'is_next_free_hit'  => (bool)$is_next_free_hit,
-    'message'           => 'Ball recorded successfully'
+    'success'             => true,
+    'ok'                  => true,
+    'seq'                 => $next_seq,
+    'totals'              => $totals,
+    'overs_limit'         => $overs_limit,
+    'max_balls'           => $max_balls,
+    'is_innings_complete' => $is_innings_complete,
+    'is_match_ended'      => $is_match_ended,
+    'is_free_hit'         => (bool)$is_free_hit,
+    'is_next_free_hit'    => (bool)$is_next_free_hit,
+    'message'             => 'Ball recorded successfully'
 ]);

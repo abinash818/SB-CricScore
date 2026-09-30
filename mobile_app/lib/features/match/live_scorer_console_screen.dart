@@ -48,6 +48,8 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
   List<String> _thisOver = [];
   bool _isLoading = false;
   bool _isFreeHit = false;
+  bool _isInningsBreakOpen = false;
+  bool _isMatchEndedOpen = false;
 
   @override
   void initState() {
@@ -69,6 +71,19 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
     String wicketType = '',
     int isFreeHitFlag = 0,
   }) async {
+    final maxBalls = widget.oversLimit * 6;
+    if (_currentInningsNo == 1 && (_legalBalls >= maxBalls || _totalWickets >= 10)) {
+      if (!_isInningsBreakOpen) {
+        _isInningsBreakOpen = true;
+        _showInningsBreakModal();
+      }
+      return;
+    }
+    if (_currentInningsNo == 2 && _isMatchEndedOpen) {
+      _showMatchEndedModal();
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -86,6 +101,8 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
         setState(() => _isLoading = false);
         if (res.data != null && (res.data['success'] == true || res.data['ok'] == true)) {
           final totals = res.data['totals'] ?? {};
+          final isLegal = (extrasType != 'wd' && extrasType != 'nb');
+
           setState(() {
             _totalRuns = (totals['runs'] != null)
                 ? (int.tryParse(totals['runs'].toString()) ?? 0)
@@ -94,8 +111,9 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
                 ? (int.tryParse(totals['wkts'].toString()) ?? 0)
                 : (isWicket ? _totalWickets + 1 : _totalWickets);
 
-            final isLegal = (extrasType != 'wd' && extrasType != 'nb');
-            if (isLegal) {
+            if (totals['legal'] != null) {
+              _legalBalls = int.tryParse(totals['legal'].toString()) ?? (_legalBalls + (isLegal ? 1 : 0));
+            } else if (isLegal) {
               _legalBalls++;
             }
 
@@ -116,10 +134,24 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
           });
 
           // Check if Innings 1 is completed (Overs limit reached or 10 wickets)
-          final maxBalls = widget.oversLimit * 6;
-          if (_currentInningsNo == 1 && (_legalBalls >= maxBalls || _totalWickets >= 10)) {
+          final int overs = res.data['overs_limit'] != null
+              ? (int.tryParse(res.data['overs_limit'].toString()) ?? widget.oversLimit)
+              : widget.oversLimit;
+          final int matchMaxBalls = overs * 6;
+          final bool isInnComplete = (res.data['is_innings_complete'] == true) ||
+              (_legalBalls >= matchMaxBalls) ||
+              (_totalWickets >= 10);
+          final bool isMatchOver = (res.data['is_match_ended'] == true) ||
+              (_currentInningsNo == 2 &&
+                  ((_targetRuns != null && _totalRuns >= _targetRuns!) ||
+                      _legalBalls >= matchMaxBalls ||
+                      _totalWickets >= 10));
+
+          if (_currentInningsNo == 1 && isInnComplete && !_isInningsBreakOpen) {
+            _isInningsBreakOpen = true;
             _showInningsBreakModal();
-          } else if (_currentInningsNo == 2 && _targetRuns != null && (_totalRuns >= _targetRuns! || _legalBalls >= maxBalls || _totalWickets >= 10)) {
+          } else if (_currentInningsNo == 2 && isMatchOver && !_isMatchEndedOpen) {
+            _isMatchEndedOpen = true;
             _showMatchEndedModal();
           }
         }
@@ -290,7 +322,7 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
                     ),
                     onPressed: () async {
                       Navigator.pop(ctx);
-                      _startInnings2(target: target, scorerName: nextScorerName);
+                      _startInnings2(target: target, scorerId: nextScorerId, scorerName: nextScorerName);
                     },
                     child: const Text('START INNINGS 2 (CHASE) 🚀', style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
@@ -300,44 +332,65 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
           );
         },
       ),
-    );
+    ).then((_) {
+      if (mounted && _currentInningsNo == 1) {
+        _isInningsBreakOpen = false;
+      }
+    });
   }
 
-  void _startInnings2({required int target, String? scorerName}) async {
+  void _startInnings2({required int target, int? scorerId, String? scorerName}) async {
     setState(() => _isLoading = true);
     try {
-      await _apiService.dio.post('/innings_complete.php', data: {
+      final res = await _apiService.dio.post('/innings_complete.php', data: {
         'innings_id': _currentInningsId,
+        'scorer_player_id': scorerId,
       });
+
+      final inn2Id = (res.data != null)
+          ? (res.data['innings2_id'] ?? res.data['innings_id'] ?? (_currentInningsId + 1))
+          : (_currentInningsId + 1);
+      final finalTarget = (res.data != null && res.data['target'] != null)
+          ? (int.tryParse(res.data['target'].toString()) ?? target)
+          : target;
 
       setState(() {
         _currentInningsNo = 2;
-        _currentInningsId = _currentInningsId + 1;
+        _currentInningsId = int.tryParse(inn2Id.toString()) ?? (_currentInningsId + 1);
         final prevBatId = _currentBattingTeamId;
         final prevBatName = _currentBattingTeamName;
         _currentBattingTeamId = _currentBowlingTeamId;
         _currentBattingTeamName = _currentBowlingTeamName;
         _currentBowlingTeamId = prevBatId;
         _currentBowlingTeamName = prevBatName;
-        _targetRuns = target;
+        _targetRuns = finalTarget;
         _activeScorerName = scorerName;
         _totalRuns = 0;
         _totalWickets = 0;
         _legalBalls = 0;
         _thisOver = [];
         _isLoading = false;
+        _isInningsBreakOpen = false;
       });
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Innings 2 Started! Target: $target Runs. Scorekeeper: ${_activeScorerName ?? _currentBattingTeamName}'),
+            content: Text('Innings 2 Started! Target: $finalTarget Runs. Scorekeeper: ${_activeScorerName ?? _currentBattingTeamName}'),
             backgroundColor: Colors.green,
           ),
         );
       }
-    } catch (_) {
-      if (mounted) setState(() => _isLoading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isInningsBreakOpen = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error starting Innings 2: $e'), backgroundColor: AppTheme.errorRed),
+        );
+      }
     }
   }
 
