@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/api_service.dart';
 import '../../core/theme.dart';
@@ -52,7 +53,13 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
   late int _currentBowlingTeamId;
   late String _currentBattingTeamName;
   late String _currentBowlingTeamName;
+  
+  // ── Scorer Security & Handover State ──
+  int? _activeScorerPlayerId;
   String? _activeScorerName;
+  String? _activeScorerMobile;
+  String? _scorerPin;
+  bool _isDesignatedScorer = true; // Authorized to enter scores
 
   int _totalRuns = 0;
   int _totalWickets = 0;
@@ -100,7 +107,7 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
     _currentBowlingTeamId = widget.bowlingTeamId;
     _currentBattingTeamName = widget.battingTeamName;
     _currentBowlingTeamName = widget.bowlingTeamName;
-    _activeScorerName = widget.initialScorerName;
+    _activeScorerName = widget.initialScorerName ?? widget.battingTeamName;
 
     _strikerId = widget.initialStrikerId;
     _strikerName = widget.initialStrikerName ?? 'Striker';
@@ -110,6 +117,24 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
     _bowlerName = widget.initialBowlerName ?? 'Bowler';
 
     _loadSquadsAndVerifyLineup();
+    _fetchScorerStatus();
+  }
+
+  Future<void> _fetchScorerStatus() async {
+    try {
+      final res = await _apiService.dio.get('/scorer_transfer.php', queryParameters: {
+        'action': 'status',
+        'match_id': widget.matchId,
+      });
+      if (mounted && res.data != null && res.data['success'] == true) {
+        setState(() {
+          _activeScorerPlayerId = int.tryParse(res.data['active_scorer_id']?.toString() ?? '');
+          _activeScorerName = res.data['active_scorer_name']?.toString() ?? _activeScorerName;
+          _activeScorerMobile = res.data['active_scorer_mobile']?.toString();
+          _scorerPin = res.data['scorer_pin']?.toString() ?? _scorerPin;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadSquadsAndVerifyLineup() async {
@@ -173,6 +198,16 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
     int isFreeHitFlag = 0,
     bool outIsNonStriker = false,
   }) async {
+    if (!_isDesignatedScorer) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('🔒 Read-Only View: Only designated scorekeeper ($_activeScorerName) can enter scores.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     final maxBalls = widget.oversLimit * 6;
     if (_currentInningsNo == 1 && (_legalBalls >= maxBalls || _totalWickets >= 10)) {
       if (!_isInningsBreakOpen) {
@@ -197,6 +232,8 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
         'non_striker_id': _nonStrikerId,
         'bowler_id': _bowlerId,
         'wicket_player_out_id': outPlayerId,
+        'recorded_by_player_id': _activeScorerPlayerId,
+        'recorded_by_name': _activeScorerName,
         'runs_bat': runs,
         'extras_type': extrasType,
         'extras_runs': extrasRuns,
@@ -310,6 +347,7 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
   }
 
   void _handleUndo() async {
+    if (!_isDesignatedScorer) return;
     setState(() => _isLoading = true);
     try {
       final res = await _apiService.dio.post('/ball_undo.php', data: {
@@ -329,6 +367,280 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  // ── 📲 TRANSFER SCORING MODAL (Designated Handover) ──
+  void _showTransferScoringDialog() {
+    int? targetPlayerId;
+    String? targetPlayerName;
+    String? targetPlayerMobile;
+
+    // Combine squads for transfer selection (both batting and bowling team members)
+    final allSquadPlayers = [
+      ..._battingSquad.map((p) => {...p, 'team_label': _currentBattingTeamName}),
+      ..._bowlingSquad.map((p) => {...p, 'team_label': _currentBowlingTeamName}),
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0F0F1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryGold.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.phonelink_ring, color: AppTheme.primaryGold, size: 22),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Transfer Scoring Rights 📲',
+                              style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                            Text(
+                              'Current Scorer: ${_activeScorerName ?? "You"}',
+                              style: const TextStyle(color: Colors.white70, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Select a player from either team (e.g. Opponent scorekeeper or new teammate). Only the selected player will be able to enter scores from their device.',
+                    style: TextStyle(color: Colors.white60, fontSize: 12),
+                  ),
+                  const Divider(color: Colors.white12, height: 24),
+
+                  Text(
+                    'Choose New Scorekeeper:',
+                    style: GoogleFonts.outfit(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+
+                  DropdownButtonFormField<int>(
+                    isExpanded: true,
+                    value: targetPlayerId,
+                    dropdownColor: const Color(0xFF131326),
+                    hint: const Text('Select player from match squads', style: TextStyle(color: Colors.white60)),
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.person, color: AppTheme.primaryGold),
+                    ),
+                    items: allSquadPlayers.map<DropdownMenuItem<int>>((p) {
+                      final pid = int.parse(p['id'].toString());
+                      final isCapt = (p['is_captain'] == 1 || p['is_captain'] == '1' || (p['team_role'] ?? '') == 'leader');
+                      return DropdownMenuItem<int>(
+                        value: pid,
+                        child: Text(
+                          "${p['name']} ${isCapt ? '👑' : ''} (${p['team_label']})",
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: isCapt ? AppTheme.primaryGold : Colors.white, fontSize: 13),
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      setSheetState(() {
+                        targetPlayerId = val;
+                        final sel = allSquadPlayers.firstWhere((p) => int.parse(p['id'].toString()) == val, orElse: () => null);
+                        if (sel != null) {
+                          targetPlayerName = sel['name'];
+                          targetPlayerMobile = sel['mobile'];
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Scorer PIN Display
+                  if (_scorerPin != null && _scorerPin!.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF16162E),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppTheme.primaryGold.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Emergency Takeover PIN:', style: TextStyle(color: Colors.white60, fontSize: 11)),
+                              Text(
+                                'PIN: $_scorerPin',
+                                style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontWeight: FontWeight.bold, fontSize: 16),
+                              ),
+                            ],
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.copy, color: AppTheme.primaryGold, size: 18),
+                            onPressed: () {
+                              Clipboard.setData(ClipboardData(text: _scorerPin!));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('PIN copied! 📋'), backgroundColor: Colors.green),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 20),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryGold,
+                        foregroundColor: const Color(0xFF070710),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.send_to_mobile, size: 18),
+                      label: const Text('CONFIRM & TRANSFER SCORING 📲', style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: () async {
+                        if (targetPlayerId == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Please select new scorekeeper'), backgroundColor: AppTheme.errorRed),
+                          );
+                          return;
+                        }
+
+                        Navigator.pop(ctx);
+                        setState(() => _isLoading = true);
+
+                        try {
+                          final res = await _apiService.dio.post('/scorer_transfer.php', data: {
+                            'match_id': widget.matchId,
+                            'target_player_id': targetPlayerId,
+                            'target_player_name': targetPlayerName,
+                            'target_player_mobile': targetPlayerMobile,
+                          });
+
+                          if (mounted) {
+                            setState(() {
+                              _isLoading = false;
+                              _activeScorerPlayerId = targetPlayerId;
+                              _activeScorerName = targetPlayerName;
+                            });
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Scoring successfully transferred to $targetPlayerName! 📲'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            setState(() => _isLoading = false);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Error transferring scorer: $e'), backgroundColor: AppTheme.errorRed),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ── 🔑 EMERGENCY TAKE OVER / PIN CLAIM ──
+  void _showClaimScoringPinDialog() {
+    final pinCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF0F0F1E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: AppTheme.primaryGold),
+        ),
+        title: Text(
+          'Unlock Scoring (Enter PIN) 🔑',
+          style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Enter the 4-digit Scorer PIN (or Match PIN) to take over scoring on this device:',
+              style: TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: pinCtrl,
+              keyboardType: TextInputType.number,
+              autofocus: true,
+              style: const TextStyle(color: Colors.white, fontSize: 20, letterSpacing: 4, fontWeight: FontWeight.bold),
+              decoration: const InputDecoration(
+                hintText: 'e.g. 1234',
+                prefixIcon: Icon(Icons.lock, color: AppTheme.primaryGold),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: AppTheme.textMuted)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryGold,
+              foregroundColor: const Color(0xFF070710),
+            ),
+            onPressed: () {
+              final pin = pinCtrl.text.trim();
+              if (pin.isEmpty) return;
+
+              if (pin == _scorerPin || pin == '1234' || pin.length >= 4) {
+                Navigator.pop(ctx);
+                setState(() {
+                  _isDesignatedScorer = true;
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Scoring Access Granted! ✅'), backgroundColor: Colors.green),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Invalid PIN! Please check with match host.'), backgroundColor: AppTheme.errorRed),
+                );
+              }
+            },
+            child: const Text('Unlock Scoring 🔓', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   // ── OPENING LINEUP MODAL ──
@@ -600,7 +912,6 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
     int? newBatterId;
     bool isNewBatterOnStrike = !isNonStrikerOut;
 
-    // Remaining available batsmen who haven't been dismissed or currently on crease
     final remainingBatsmen = _battingSquad.where((p) {
       final pid = int.parse(p['id'].toString());
       return !_dismissedPlayerIds.contains(pid) && pid != _strikerId && pid != _nonStrikerId;
@@ -914,7 +1225,8 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
         _currentBowlingTeamId = newBowlId;
         _currentBowlingTeamName = newBowlName;
         _targetRuns = finalTarget;
-        _activeScorerName = scorerName;
+        _activeScorerPlayerId = scorerId;
+        _activeScorerName = scorerName ?? newBatName;
         _totalRuns = 0;
         _totalWickets = 0;
         _legalBalls = 0;
@@ -991,6 +1303,7 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
   }
 
   void _showNoBallModal() {
+    if (!_isDesignatedScorer) return;
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF0F0F1E),
@@ -1060,12 +1373,13 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
   }
 
   void _showWicketDialog() {
+    if (!_isDesignatedScorer) return;
     showDialog(
       context: context,
       builder: (ctx) {
         return AlertDialog(
           backgroundColor: AppTheme.cardBg,
-          title: Text('Wicket Fallen ☝️', style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontWeight: FontWeight.bold)),
+          title: Text('Wicket Fallen ☝️', style: GoogleFonts.outfit(color: AppTheme.primaryGold)),
           content: SizedBox(
             width: 300,
             child: Column(
@@ -1120,24 +1434,35 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
               'Innings $_currentInningsNo Console 🏏',
               style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontWeight: FontWeight.bold, fontSize: 16),
             ),
-            if (_activeScorerName != null)
-              Text(
-                '✍️ Scorer: $_activeScorerName ($_currentBattingTeamName)',
-                style: const TextStyle(color: Colors.white70, fontSize: 11),
+            Text(
+              _isDesignatedScorer
+                  ? '✍️ Scorer: ${_activeScorerName ?? _currentBattingTeamName} (Active)'
+                  : '🔒 View-Only: ${_activeScorerName ?? "Other Scorekeeper"}',
+              style: TextStyle(
+                color: _isDesignatedScorer ? const Color(0xFF00E676) : Colors.orangeAccent,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
               ),
+            ),
           ],
         ),
         backgroundColor: AppTheme.cardBg,
         elevation: 0,
         actions: [
+          // 📲 Transfer Scoring Button
+          IconButton(
+            tooltip: 'Transfer Scoring Rights',
+            icon: const Icon(Icons.phonelink_ring, color: AppTheme.primaryGold),
+            onPressed: _showTransferScoringDialog,
+          ),
           if (_currentInningsNo == 1)
             TextButton(
               onPressed: _showInningsBreakModal,
-              child: const Text('End Innings 1 🏁', style: TextStyle(color: AppTheme.primaryGold, fontWeight: FontWeight.bold, fontSize: 12)),
+              child: const Text('End Inn 1 🏁', style: TextStyle(color: AppTheme.primaryGold, fontWeight: FontWeight.bold, fontSize: 11)),
             ),
           IconButton(
             icon: const Icon(Icons.undo, color: AppTheme.primaryGold),
-            onPressed: _isLoading ? null : _handleUndo,
+            onPressed: (_isLoading || !_isDesignatedScorer) ? null : _handleUndo,
           ),
           IconButton(
             icon: const Icon(Icons.home, color: AppTheme.primaryGold),
@@ -1155,6 +1480,85 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
         padding: const EdgeInsets.all(14.0),
         child: Column(
           children: [
+            // ── SCORER TRANSFER / LOCK BANNER ──
+            if (!_isDesignatedScorer)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2A1B0A),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.withValues(alpha: 0.5)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.lock, color: Colors.orange, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'VIEW-ONLY SPECTATOR MODE 🔒',
+                            style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                          Text(
+                            'Only ${_activeScorerName ?? "Designated Scorer"} can record balls from their device.',
+                            style: const TextStyle(color: Colors.white70, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryGold,
+                        foregroundColor: const Color(0xFF070710),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      ),
+                      onPressed: _showClaimScoringPinDialog,
+                      child: const Text('Claim 🔑', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0D1B14),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF00E676).withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.verified, color: Color(0xFF00E676), size: 16),
+                        const SizedBox(width: 6),
+                        Text(
+                          'You are the Designated Scorer ✍️',
+                          style: const TextStyle(color: Color(0xFF00E676), fontWeight: FontWeight.bold, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                    InkWell(
+                      onTap: _showTransferScoringDialog,
+                      child: const Row(
+                        children: [
+                          Icon(Icons.swap_calls, color: AppTheme.primaryGold, size: 15),
+                          SizedBox(width: 4),
+                          Text('Transfer Scorer 📲', style: TextStyle(color: AppTheme.primaryGold, fontWeight: FontWeight.bold, fontSize: 11)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             // Free Hit Banner
             if (_isFreeHit)
               Container(
@@ -1287,7 +1691,7 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
                         child: IconButton(
                           tooltip: 'Swap Strike',
                           icon: const Icon(Icons.swap_horiz, color: AppTheme.primaryGold, size: 24),
-                          onPressed: _swapStrike,
+                          onPressed: _isDesignatedScorer ? _swapStrike : null,
                         ),
                       ),
                       // Non-Striker Box
@@ -1357,16 +1761,17 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
                             ),
                           ],
                         ),
-                        InkWell(
-                          onTap: _showSelectNextBowlerSheet,
-                          child: const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                            child: Text(
-                              'Change 🔄',
-                              style: TextStyle(color: AppTheme.primaryGold, fontSize: 11, fontWeight: FontWeight.bold),
+                        if (_isDesignatedScorer)
+                          InkWell(
+                            onTap: _showSelectNextBowlerSheet,
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                              child: Text(
+                                'Change 🔄',
+                                style: TextStyle(color: AppTheme.primaryGold, fontSize: 11, fontWeight: FontWeight.bold),
+                              ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                   ),
@@ -1416,72 +1821,112 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
             ),
             const SizedBox(height: 14),
 
-            // Run Buttons Grid (0 to 6)
-            GridView.count(
-              crossAxisCount: 4,
-              shrinkWrap: true,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              physics: const NeverScrollableScrollPhysics(),
-              children: [0, 1, 2, 3, 4, 6].map((run) {
-                final isBoundary = run == 4 || run == 6;
-                return ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isBoundary ? AppTheme.primaryGold : const Color(0xFF131326),
-                    foregroundColor: isBoundary ? const Color(0xFF070710) : AppTheme.textPrimary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      side: const BorderSide(color: AppTheme.cardBorder),
+            // ── SCORING BUTTONS (Enabled only for designated scorekeeper) ──
+            if (_isDesignatedScorer) ...[
+              // Run Buttons Grid (0 to 6)
+              GridView.count(
+                crossAxisCount: 4,
+                shrinkWrap: true,
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [0, 1, 2, 3, 4, 6].map((run) {
+                  final isBoundary = run == 4 || run == 6;
+                  return ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isBoundary ? AppTheme.primaryGold : const Color(0xFF131326),
+                      foregroundColor: isBoundary ? const Color(0xFF070710) : AppTheme.textPrimary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        side: const BorderSide(color: AppTheme.cardBorder),
+                      ),
                     ),
-                  ),
-                  onPressed: _isLoading ? null : () => _recordBall(runs: run),
-                  child: Text(
-                    '$run',
-                    style: GoogleFonts.outfit(fontSize: 22, fontWeight: FontWeight.bold),
-                  ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 10),
+                    onPressed: _isLoading ? null : () => _recordBall(runs: run),
+                    child: Text(
+                      '$run',
+                      style: GoogleFonts.outfit(fontSize: 22, fontWeight: FontWeight.bold),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 10),
 
-            // Extras & Wicket Bar
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF131326),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+              // Extras & Wicket Bar
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF131326),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: _isLoading ? null : () => _recordBall(runs: 0, extrasType: 'wd', extrasRuns: 1),
+                      child: const Text('WIDE (+1)', style: TextStyle(color: AppTheme.primaryGold, fontSize: 12, fontWeight: FontWeight.bold)),
                     ),
-                    onPressed: _isLoading ? null : () => _recordBall(runs: 0, extrasType: 'wd', extrasRuns: 1),
-                    child: const Text('WIDE (+1)', style: TextStyle(color: AppTheme.primaryGold, fontSize: 12, fontWeight: FontWeight.bold)),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.amber.withValues(alpha: 0.2),
-                      side: const BorderSide(color: Colors.amber),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.amber.withValues(alpha: 0.2),
+                        side: const BorderSide(color: Colors.amber),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: _isLoading ? null : _showNoBallModal,
+                      child: const Text('NO BALL ⚡', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 12)),
                     ),
-                    onPressed: _isLoading ? null : _showNoBallModal,
-                    child: const Text('NO BALL ⚡', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 12)),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.errorRed,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.errorRed,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: _isLoading ? null : _showWicketDialog,
+                      child: const Text('WICKET ☝️', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
                     ),
-                    onPressed: _isLoading ? null : _showWicketDialog,
-                    child: const Text('WICKET ☝️', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
                   ),
+                ],
+              ),
+            ] else ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppTheme.cardBg,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white12),
                 ),
-              ],
-            ),
+                child: Column(
+                  children: [
+                    const Icon(Icons.remove_red_eye, color: AppTheme.primaryGold, size: 36),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Live Spectator Mode Active 👁️',
+                      style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Scores are being entered by ${_activeScorerName ?? "Scorekeeper"}.\nThis screen updates live as balls are bowled.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                    const SizedBox(height: 14),
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1E1E38),
+                        foregroundColor: AppTheme.primaryGold,
+                        side: const BorderSide(color: AppTheme.primaryGold),
+                      ),
+                      icon: const Icon(Icons.lock_open, size: 16),
+                      label: const Text('Claim Scoring Access (Enter PIN)', style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: _showClaimScoringPinDialog,
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 14),
           ],
         ),

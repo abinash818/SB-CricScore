@@ -63,8 +63,15 @@ if ($innings_no === 1) {
         $bat_id = (int)$i2['batting_team_id'];
         $bowl_id = (int)$i2['bowling_team_id'];
         if ($scorer_player_id > 0) {
+            $pSt = $pdo->prepare("SELECT name, mobile FROM players WHERE id = ?");
+            $pSt->execute([$scorer_player_id]);
+            $pRow = $pSt->fetch(PDO::FETCH_ASSOC);
+            $sName = $pRow['name'] ?? 'Scorekeeper';
+            $sMobile = $pRow['mobile'] ?? null;
+
             try {
-                $pdo->prepare("UPDATE innings SET scorer_player_id=? WHERE id=?")->execute([$scorer_player_id, $innings2_id]);
+                $pdo->prepare("UPDATE innings SET scorer_player_id=?, scorer_name=?, scorer_mobile=? WHERE id=?")->execute([$scorer_player_id, $sName, $sMobile, $innings2_id]);
+                $pdo->prepare("UPDATE matches SET active_scorer_player_id=?, active_scorer_name=?, active_scorer_mobile=? WHERE id=?")->execute([$scorer_player_id, $sName, $sMobile, $match_id]);
             } catch (Throwable $e) {}
         }
     }

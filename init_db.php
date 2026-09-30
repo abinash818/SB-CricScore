@@ -309,6 +309,15 @@ try {
     if (!in_array('district', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN district VARCHAR(100) NOT NULL DEFAULT 'Coimbatore'");
     if (!in_array('city_area', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN city_area VARCHAR(150) DEFAULT NULL");
     if (!in_array('pincode', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN pincode VARCHAR(10) DEFAULT NULL");
+    if (!in_array('active_scorer_player_id', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN active_scorer_player_id INT DEFAULT NULL");
+    if (!in_array('active_scorer_name', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN active_scorer_name VARCHAR(100) DEFAULT NULL");
+    if (!in_array('active_scorer_mobile', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN active_scorer_mobile VARCHAR(30) DEFAULT NULL");
+    if (!in_array('scorer_pin', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN scorer_pin VARCHAR(10) DEFAULT NULL");
+
+    $iCols = $pdo->query("SHOW COLUMNS FROM innings")->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array('scorer_player_id', $iCols)) $pdo->exec("ALTER TABLE innings ADD COLUMN scorer_player_id INT DEFAULT NULL");
+    if (!in_array('scorer_name', $iCols)) $pdo->exec("ALTER TABLE innings ADD COLUMN scorer_name VARCHAR(100) DEFAULT NULL");
+    if (!in_array('scorer_mobile', $iCols)) $pdo->exec("ALTER TABLE innings ADD COLUMN scorer_mobile VARCHAR(30) DEFAULT NULL");
 
     $uCols = $pdo->query("SHOW COLUMNS FROM app_users")->fetchAll(PDO::FETCH_COLUMN);
     if (!in_array('state', $uCols)) $pdo->exec("ALTER TABLE app_users ADD COLUMN state VARCHAR(100) DEFAULT 'Tamil Nadu'");
@@ -316,6 +325,8 @@ try {
 
     $bCols = $pdo->query("SHOW COLUMNS FROM ball_events")->fetchAll(PDO::FETCH_COLUMN);
     if (!in_array('is_free_hit', $bCols)) $pdo->exec("ALTER TABLE ball_events ADD COLUMN is_free_hit TINYINT(1) DEFAULT 0");
+    if (!in_array('recorded_by_player_id', $bCols)) $pdo->exec("ALTER TABLE ball_events ADD COLUMN recorded_by_player_id INT DEFAULT NULL");
+    if (!in_array('recorded_by_name', $bCols)) $pdo->exec("ALTER TABLE ball_events ADD COLUMN recorded_by_name VARCHAR(100) DEFAULT NULL");
 
     $xiCols = $pdo->query("SHOW COLUMNS FROM match_playing_xi")->fetchAll(PDO::FETCH_COLUMN);
     if (!in_array('is_substitute', $xiCols)) $pdo->exec("ALTER TABLE match_playing_xi ADD COLUMN is_substitute TINYINT(1) DEFAULT 0");

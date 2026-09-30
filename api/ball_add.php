@@ -83,9 +83,21 @@ $stmt = $pdo->prepare('SELECT COALESCE(MAX(seq),0)+1 FROM ball_events WHERE inni
 $stmt->execute([$innings_id]);
 $next_seq = (int)$stmt->fetchColumn();
 
-// 3. Insert Ball Event with is_free_hit
-$stmt = $pdo->prepare("INSERT INTO ball_events(innings_id, seq, striker_id, non_striker_id, bowler_id, runs_bat, extras_type, extras_runs, is_wicket, wicket_type, wicket_player_out_id, is_legal, is_free_hit) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)");
-$stmt->execute([$innings_id, $next_seq, ($striker_id?:null), ($non_striker_id?:null), ($bowler_id?:null), $runs_bat, ($extras_type!==''?$extras_type:null), $extras_runs, $is_wicket?1:0, ($wicket_type!==''?$wicket_type:null), ($wicket_player_out_id?:null), $is_legal, $is_free_hit]);
+// Auto-migrate columns if missing
+try {
+    $bCols = [];
+    $st = $pdo->query("SHOW COLUMNS FROM ball_events");
+    while ($r = $st->fetch(PDO::FETCH_ASSOC)) { $bCols[strtolower($r['Field'])] = true; }
+    if (!isset($bCols['recorded_by_player_id'])) $pdo->exec("ALTER TABLE ball_events ADD COLUMN recorded_by_player_id INT DEFAULT NULL");
+    if (!isset($bCols['recorded_by_name'])) $pdo->exec("ALTER TABLE ball_events ADD COLUMN recorded_by_name VARCHAR(100) DEFAULT NULL");
+} catch (Throwable $e) {}
+
+$recorded_by_pid = (int)($input['recorded_by_player_id'] ?? ($input['scorer_player_id'] ?? 0));
+$recorded_by_name = trim($input['recorded_by_name'] ?? ($input['scorer_name'] ?? ''));
+
+// 3. Insert Ball Event with is_free_hit and recorded_by
+$stmt = $pdo->prepare("INSERT INTO ball_events(innings_id, seq, striker_id, non_striker_id, bowler_id, runs_bat, extras_type, extras_runs, is_wicket, wicket_type, wicket_player_out_id, is_legal, is_free_hit, recorded_by_player_id, recorded_by_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+$stmt->execute([$innings_id, $next_seq, ($striker_id?:null), ($non_striker_id?:null), ($bowler_id?:null), $runs_bat, ($extras_type!==''?$extras_type:null), $extras_runs, $is_wicket?1:0, ($wicket_type!==''?$wicket_type:null), ($wicket_player_out_id?:null), $is_legal, $is_free_hit, ($recorded_by_pid?:null), ($recorded_by_name?:null)]);
 
 // 4. Update Target (Logic)
 if ((int)$inn['innings_no'] === 1) {
