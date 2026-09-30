@@ -821,43 +821,49 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                     ] else
                       const SizedBox(height: 12),
 
-                    // Opponent Team (Can be QR Invite or selected)
-                    DropdownButtonFormField<int?>(
-                      isExpanded: true,
-                      initialValue: _selectedTeamB,
-                      decoration: const InputDecoration(
-                        labelText: 'Opponent Team (Team B)',
-                        prefixIcon: Icon(Icons.shield, color: AppTheme.primaryGold),
+                    // Opponent Team (Strict QR Scan / PIN Invite Only - No public team list)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0D1B14),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFF00E676).withValues(alpha: 0.4), width: 1.2),
                       ),
-                      items: [
-                        const DropdownMenuItem<int?>(
-                          value: null,
-                          child: Row(
-                            children: [
-                              Icon(Icons.qr_code_scanner, size: 18, color: Color(0xFF00E676)),
-                              SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  '🔗 Opponent Joins via QR / PIN',
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(color: Color(0xFF00E676), fontWeight: FontWeight.bold),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        ..._teams.where((t) => int.parse(t['id'].toString()) != _selectedTeamA).map<DropdownMenuItem<int?>>((t) {
-                          final int id = int.parse(t['id'].toString());
-                          return DropdownMenuItem<int?>(
-                            value: id,
-                            child: Text(
-                              "${t['name']} (Invite Only)",
-                              overflow: TextOverflow.ellipsis,
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF00E676).withValues(alpha: 0.15),
+                              shape: BoxShape.circle,
                             ),
-                          );
-                        }),
-                      ],
-                      onChanged: (val) => setState(() => _selectedTeamB = val),
+                            child: const Icon(Icons.qr_code_scanner, color: Color(0xFF00E676), size: 22),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      'Opponent Team (Team B)',
+                                      style: TextStyle(color: Color(0xFF00E676), fontWeight: FontWeight.bold, fontSize: 13),
+                                    ),
+                                    SizedBox(width: 6),
+                                    Text('• QR Invite Only 🔒', style: TextStyle(color: Colors.white60, fontSize: 11)),
+                                  ],
+                                ),
+                                SizedBox(height: 3),
+                                Text(
+                                  'Opponent Captain will scan Match QR or enter PIN to connect their squad.',
+                                  style: TextStyle(color: Colors.white70, fontSize: 11),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 20),
 
