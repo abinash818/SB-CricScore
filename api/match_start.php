@@ -56,7 +56,27 @@ if ($bat_first !== $teamA && $bat_first !== $teamB) {
 $bowling = ($bat_first === $teamA) ? $teamB : $teamA;
 if ($toss_winner <= 0) $toss_winner = $bat_first;
 
+$scorer_pid    = (int)($input['scorer_player_id'] ?? 0);
+$toss_caller   = (int)($input['toss_caller_team_id'] ?? 0);
+$toss_call     = trim($input['toss_call'] ?? '');
+$toss_result   = trim($input['toss_result'] ?? '');
+
 try {
+    // Auto-migrate columns if missing
+    try {
+        $mCols = [];
+        $st = $pdo->query("SHOW COLUMNS FROM matches");
+        while ($r = $st->fetch(PDO::FETCH_ASSOC)) { $mCols[strtolower($r['Field'])] = true; }
+        if (!isset($mCols['toss_caller_team_id'])) $pdo->exec("ALTER TABLE matches ADD COLUMN toss_caller_team_id INT DEFAULT NULL");
+        if (!isset($mCols['toss_call'])) $pdo->exec("ALTER TABLE matches ADD COLUMN toss_call VARCHAR(20) DEFAULT NULL");
+        if (!isset($mCols['toss_result'])) $pdo->exec("ALTER TABLE matches ADD COLUMN toss_result VARCHAR(20) DEFAULT NULL");
+        
+        $iCols = [];
+        $st2 = $pdo->query("SHOW COLUMNS FROM innings");
+        while ($r2 = $st2->fetch(PDO::FETCH_ASSOC)) { $iCols[strtolower($r2['Field'])] = true; }
+        if (!isset($iCols['scorer_player_id'])) $pdo->exec("ALTER TABLE innings ADD COLUMN scorer_player_id INT DEFAULT NULL");
+    } catch (Throwable $e) {}
+
     $pdo->beginTransaction();
 
     // Create Innings 1 if not exists
@@ -64,11 +84,11 @@ try {
     $chk1->execute([$match_id]);
     $i1 = $chk1->fetch(PDO::FETCH_ASSOC);
     if (!$i1) {
-        $ins1 = $pdo->prepare("INSERT INTO innings(match_id, innings_no, batting_team_id, bowling_team_id, completed) VALUES(?, 1, ?, ?, 0)");
-        $ins1->execute([$match_id, $bat_first, $bowling]);
+        $ins1 = $pdo->prepare("INSERT INTO innings(match_id, innings_no, batting_team_id, bowling_team_id, scorer_player_id, completed) VALUES(?, 1, ?, ?, ?, 0)");
+        $ins1->execute([$match_id, $bat_first, $bowling, ($scorer_pid > 0 ? $scorer_pid : null)]);
         $inn1_id = (int)$pdo->lastInsertId();
     } else {
-        $pdo->prepare("UPDATE innings SET batting_team_id=?, bowling_team_id=? WHERE id=?")->execute([$bat_first, $bowling, $i1['id']]);
+        $pdo->prepare("UPDATE innings SET batting_team_id=?, bowling_team_id=?, scorer_player_id=? WHERE id=?")->execute([$bat_first, $bowling, ($scorer_pid > 0 ? $scorer_pid : null), $i1['id']]);
         $inn1_id = (int)$i1['id'];
     }
 
@@ -83,20 +103,28 @@ try {
         $pdo->prepare("UPDATE innings SET batting_team_id=?, bowling_team_id=? WHERE id=?")->execute([$bowling, $bat_first, $i2['id']]);
     }
 
-    // Update Match status to live
-    $upd = $pdo->prepare("UPDATE matches SET status='live', toss_winner_team_id=?, toss_decision=? WHERE id=?");
-    $upd->execute([$toss_winner, $toss_decision, $match_id]);
+    // Update Match status to live with toss details
+    $upd = $pdo->prepare("UPDATE matches SET status='live', toss_winner_team_id=?, toss_decision=?, toss_caller_team_id=?, toss_call=?, toss_result=? WHERE id=?");
+    $upd->execute([
+        $toss_winner,
+        $toss_decision,
+        ($toss_caller > 0 ? $toss_caller : null),
+        ($toss_call ?: null),
+        ($toss_result ?: null),
+        $match_id
+    ]);
 
     $pdo->commit();
 
     echo json_encode([
-        'success'      => true,
-        'ok'           => true,
-        'match_id'     => $match_id,
-        'innings_id'   => $inn1_id,
-        'batting_team' => $bat_first,
-        'bowling_team' => $bowling,
-        'message'      => 'Match started successfully'
+        'success'          => true,
+        'ok'               => true,
+        'match_id'         => $match_id,
+        'innings_id'       => $inn1_id,
+        'batting_team'     => $bat_first,
+        'bowling_team'     => $bowling,
+        'scorer_player_id' => $scorer_pid,
+        'message'          => 'Match started successfully! 🏏'
     ]);
 } catch (Exception $e) {
     $pdo->rollBack();
