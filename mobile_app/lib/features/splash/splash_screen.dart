@@ -24,7 +24,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _checkAutoLogin() async {
     // Small splash delay for visual smoothness
-    await Future.delayed(const Duration(milliseconds: 1200));
+    await Future.delayed(const Duration(milliseconds: 1000));
 
     final token = await _apiService.storage.read(key: 'auth_token');
 
@@ -55,10 +55,17 @@ class _SplashScreenState extends State<SplashScreen> {
               (route) => false,
             );
           }
-        } else {
-          // Token invalid or expired -> Clear token & go to Phone Login
+        } else if (res['code'] == 'TOKEN_EXPIRED') {
+          // Explicit token expiration from server
           await _apiService.storage.delete(key: 'auth_token');
           _navigateToPhoneLogin();
+        } else {
+          // Token exists, route to Home
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
+            (route) => false,
+          );
         }
       }
     } catch (_) {

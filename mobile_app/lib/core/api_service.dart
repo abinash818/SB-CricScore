@@ -15,7 +15,13 @@ class ApiService {
     },
   ));
 
-  final FlutterSecureStorage storage = const FlutterSecureStorage();
+  final FlutterSecureStorage storage = const FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    webOptions: WebOptions(
+      dbName: 'sb_cricscore_vault',
+      publicKey: 'sb_cricscore_auth_key',
+    ),
+  );
 
   static String getImageUrl(String? path) {
     if (path == null || path.isEmpty) return '';
@@ -29,16 +35,10 @@ class ApiService {
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
         final token = await storage.read(key: 'auth_token');
-        if (token != null) {
+        if (token != null && token.isNotEmpty) {
           options.headers['Authorization'] = 'Bearer $token';
         }
         return handler.next(options);
-      },
-      onError: (DioException e, handler) {
-        if (e.response?.statusCode == 401) {
-          storage.delete(key: 'auth_token');
-        }
-        return handler.next(e);
       },
     ));
   }

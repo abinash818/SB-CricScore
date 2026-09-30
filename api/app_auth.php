@@ -16,11 +16,22 @@ if (!function_exists('app_get_token')) {
      */
     function app_get_token(): ?string {
         $header = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+        if (empty($header) && function_exists('getallheaders')) {
+            $headers = getallheaders();
+            if (is_array($headers)) {
+                foreach ($headers as $k => $v) {
+                    if (strtolower($k) === 'authorization') {
+                        $header = $v;
+                        break;
+                    }
+                }
+            }
+        }
         if (preg_match('/^Bearer\s+(.+)$/i', $header, $m)) {
             return trim($m[1]);
         }
-        // Also allow token in query string for WebSocket / SSE fallbacks
-        return $_GET['token'] ?? null;
+        // Also allow token in query string or post body for WebSocket / SSE / form fallbacks
+        return $_GET['token'] ?? ($_POST['token'] ?? null);
     }
 
     /**
