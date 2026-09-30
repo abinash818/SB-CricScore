@@ -461,8 +461,9 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
                     onChanged: (val) {
                       setSheetState(() {
                         targetPlayerId = val;
-                        final sel = allSquadPlayers.firstWhere((p) => int.parse(p['id'].toString()) == val, orElse: () => null);
-                        if (sel != null) {
+                        final matches = allSquadPlayers.where((p) => int.parse(p['id'].toString()) == val);
+                        if (matches.isNotEmpty) {
+                          final sel = matches.first;
                           targetPlayerName = sel['name'];
                           targetPlayerMobile = sel['mobile'];
                         }
