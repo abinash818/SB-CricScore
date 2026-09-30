@@ -25,6 +25,8 @@ if (!$hasExplicitPlayerId && $currentUser) {
     // 1. Current Authenticated App User's Own Profile
     $player = [
         'id'             => (int)$currentUser['id'],
+        'user_id'        => (int)$currentUser['id'],
+        'mobile'         => $currentUser['mobile'] ?? '',
         'name'           => $currentUser['name'] ?: 'Cricketer',
         'city'           => $currentUser['city'] ?: 'India',
         'profile_pic'    => $currentUser['profile_pic'],

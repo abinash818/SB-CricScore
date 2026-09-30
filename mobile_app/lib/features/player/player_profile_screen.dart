@@ -678,10 +678,13 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
                 const SizedBox(height: 10),
                 FutureBuilder<Map<String, dynamic>>(
                   future: _apiService.getMyTeams(
-                    ownerId: player['user_id'] != null ? int.tryParse(player['user_id'].toString()) : null,
-                    playerId: widget.playerId ?? (player['id'] != null ? int.tryParse(player['id'].toString()) : null),
+                    ownerId: widget.playerId == null
+                        ? (player['user_id'] != null
+                            ? int.tryParse(player['user_id'].toString())
+                            : (player['id'] != null ? int.tryParse(player['id'].toString()) : null))
+                        : null,
+                    playerId: widget.playerId,
                     mobile: player['mobile']?.toString() ?? player['phone']?.toString(),
-                    playerName: player['name']?.toString(),
                   ),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {

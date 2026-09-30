@@ -370,38 +370,35 @@ if ($action === 'my_teams') {
     $ownerId = (int)($_GET['owner_id'] ?? ($_GET['user_id'] ?? 0));
     $playerId = (int)($_GET['player_id'] ?? 0);
     $mobile = trim($_GET['mobile'] ?? '');
-    $playerName = trim($_GET['player_name'] ?? '');
 
     $currentUser = app_optional_auth($pdo);
     if ($currentUser) {
         if ($ownerId <= 0) $ownerId = (int)$currentUser['id'];
-        if (empty($mobile)) $mobile = $currentUser['phone'] ?? '';
-        if (empty($playerName)) $playerName = $currentUser['name'] ?? '';
+        if (empty($mobile)) $mobile = $currentUser['mobile'] ?? ($currentUser['phone'] ?? '');
     }
 
     $whereClauses = [];
     $params = [];
 
-    // 1. Teams created by this user
+    // 1. Teams created/owned by this user
     if ($ownerId > 0) {
         $whereClauses[] = "t.owner_id = ?";
         $params[] = $ownerId;
     }
 
-    // 2. Teams where this player is registered in squad
-    if ($playerId > 0) {
-        $whereClauses[] = "t.id IN (SELECT team_id FROM players WHERE id = ?)";
-        $params[] = $playerId;
-    }
+    // 2. Teams where this user's mobile is registered in squad
     if (!empty($mobile)) {
         $whereClauses[] = "t.id IN (SELECT team_id FROM players WHERE mobile = ?)";
         $params[] = $mobile;
     }
-    if (!empty($playerName)) {
-        $whereClauses[] = "t.id IN (SELECT team_id FROM players WHERE LOWER(name) = ?)";
-        $params[] = strtolower($playerName);
+
+    // 3. Teams where this specific squad player id is registered
+    if ($playerId > 0) {
+        $whereClauses[] = "t.id IN (SELECT team_id FROM players WHERE id = ?)";
+        $params[] = $playerId;
     }
 
+    $myTeams = [];
     if (!empty($whereClauses)) {
         $whereSql = implode(' OR ', $whereClauses);
         $stmt = $pdo->prepare("
@@ -413,16 +410,6 @@ if ($action === 'my_teams') {
         ");
         $stmt->execute($params);
         $myTeams = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    } else {
-        // Fallback: If not logged in and no specific owner given, only return user-created teams (owner_id IS NOT NULL) or recently created user teams
-        $stmt = $pdo->query("
-            SELECT t.*, 
-                   (SELECT COUNT(*) FROM players p WHERE p.team_id = t.id) as player_count 
-            FROM teams t 
-            WHERE t.owner_id IS NOT NULL OR t.tournament_id IS NULL OR t.id NOT IN (SELECT id FROM teams WHERE name IN ('Team A','Team B','Team C','Team D','A','B','C','D'))
-            ORDER BY t.id DESC LIMIT 10
-        ");
-        $myTeams = $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     $sanitizedMyTeams = [];
@@ -433,9 +420,9 @@ if ($action === 'my_teams') {
 
         if ($isOwner) {
             $userRole = 'leader';
-        } else if (!empty($mobile) || !empty($playerName)) {
-            $chkRole = $pdo->prepare("SELECT is_captain, team_role FROM players WHERE team_id = ? AND (mobile = ? OR LOWER(name) = ?) LIMIT 1");
-            $chkRole->execute([$tId, $mobile, strtolower($playerName)]);
+        } else if (!empty($mobile)) {
+            $chkRole = $pdo->prepare("SELECT is_captain, team_role FROM players WHERE team_id = ? AND mobile = ? LIMIT 1");
+            $chkRole->execute([$tId, $mobile]);
             $pRole = $chkRole->fetch(PDO::FETCH_ASSOC);
             if ($pRole) {
                 if ((int)($pRole['is_captain'] ?? 0) === 1 || ($pRole['team_role'] ?? '') === 'leader') {
@@ -445,7 +432,7 @@ if ($action === 'my_teams') {
                 }
             }
         } else {
-            $userRole = 'leader'; // Default fallback for newly created local teams
+            $userRole = 'leader';
         }
 
         $t['user_role'] = $userRole;
