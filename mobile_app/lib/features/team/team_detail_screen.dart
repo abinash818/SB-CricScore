@@ -370,6 +370,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   Future<void> _addExistingPlayerToSquad(Map<String, dynamic> player) async {
     setState(() => _isLoading = true);
     try {
+      final int? srcPid = int.tryParse(player['id']?.toString() ?? '');
       final res = await _apiService.captainRegisterPlayer(
         teamId: widget.teamId,
         name: player['name'] ?? 'Player',
@@ -379,6 +380,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
         bowlingStyle: player['bowling_style'] ?? 'Right Arm Medium',
         jerseyNumber: player['jersey_number'] ?? '',
         skipOtp: true,
+        sourcePlayerId: srcPid,
       );
       if (mounted) {
         if (res['success'] == true) {

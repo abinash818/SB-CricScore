@@ -297,6 +297,7 @@ class ApiService {
     String bowlingStyle = 'Right Arm Medium',
     String jerseyNumber = '',
     bool skipOtp = false,
+    int? sourcePlayerId,
   }) async {
     final response = await dio.post('/captain_register_player.php', data: {
       'team_id': teamId,
@@ -308,6 +309,7 @@ class ApiService {
       'bowling_style': bowlingStyle,
       'jersey_number': jerseyNumber,
       'skip_otp': skipOtp,
+      if (sourcePlayerId != null && sourcePlayerId > 0) 'source_player_id': sourcePlayerId,
     });
     return response.data;
   }

@@ -36,8 +36,26 @@ if ($team_id <= 0 || empty($name)) {
     exit;
 }
 
+$sourcePlayerId = (int)($input['source_player_id'] ?? ($input['player_id'] ?? 0));
+
+// If mobile was masked in UI search results (e.g. 97******13), retrieve the real unmasked mobile from DB
+if (strpos($mobile, '*') !== false && $sourcePlayerId > 0) {
+    try {
+        $origStmt = $pdo->prepare("SELECT mobile FROM players WHERE id = ? LIMIT 1");
+        $origStmt->execute([$sourcePlayerId]);
+        $origMob = $origStmt->fetchColumn();
+        if (!empty($origMob)) {
+            $mobile = $origMob;
+        } else {
+            $uStmt = $pdo->prepare("SELECT phone FROM app_users WHERE id = ? LIMIT 1");
+            $uStmt->execute([$sourcePlayerId]);
+            $mobile = $uStmt->fetchColumn() ?: '';
+        }
+    } catch (Throwable $e) {}
+}
+
 // Mobile format sanitization and normalization
-if (!empty($mobile)) {
+if (!empty($mobile) && strpos($mobile, '*') === false) {
     $digits = preg_replace('/\D+/', '', $mobile);
     if (strlen($digits) >= 10) {
         $mobile = substr($digits, -10);
@@ -46,7 +64,7 @@ if (!empty($mobile)) {
     }
 }
 
-if (!empty($mobile) && !preg_match('/^[6-9]\d{9}$/', $mobile)) {
+if (!empty($mobile) && strpos($mobile, '*') === false && !preg_match('/^[6-9]\d{9}$/', $mobile)) {
     http_response_code(400);
     echo json_encode(['success' => false, 'message' => 'Invalid 10-digit Indian mobile number.']);
     exit;
