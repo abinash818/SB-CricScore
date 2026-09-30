@@ -147,6 +147,24 @@ try {
         exit;
     }
 
+    try {
+        $pdo->exec("
+            CREATE TABLE IF NOT EXISTS match_playing_xi (
+                id            INT AUTO_INCREMENT PRIMARY KEY,
+                match_id      INT NOT NULL,
+                team_id       INT NOT NULL,
+                player_id     INT NOT NULL,
+                is_substitute TINYINT(1) DEFAULT 0,
+                is_captain    TINYINT(1) DEFAULT 0,
+                is_keeper     TINYINT(1) DEFAULT 0,
+                batting_order INT DEFAULT NULL,
+                created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_mpxi_match (match_id),
+                INDEX idx_mpxi_team (team_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+    } catch (Throwable $e) {}
+
     $pdo->beginTransaction();
 
     // 2. Attach Team B to Match
@@ -155,34 +173,19 @@ try {
 
     // 3. Save Playing XI for Team B if provided
     if (!empty($player_ids) && is_array($player_ids)) {
-        try {
-            $pdo->exec("
-                CREATE TABLE IF NOT EXISTS match_playing_xi (
-                    id            INT AUTO_INCREMENT PRIMARY KEY,
-                    match_id      INT NOT NULL,
-                    team_id       INT NOT NULL,
-                    player_id     INT NOT NULL,
-                    is_substitute TINYINT(1) DEFAULT 0,
-                    is_captain    TINYINT(1) DEFAULT 0,
-                    is_keeper     TINYINT(1) DEFAULT 0,
-                    batting_order INT DEFAULT NULL,
-                    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    INDEX idx_mpxi_match (match_id),
-                    INDEX idx_mpxi_team (team_id)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-            ");
-            $delXI = $pdo->prepare("DELETE FROM match_playing_xi WHERE match_id = ? AND team_id = ?");
-            $delXI->execute([$actualMatchId, $team_id]);
+        $delXI = $pdo->prepare("DELETE FROM match_playing_xi WHERE match_id = ? AND team_id = ?");
+        $delXI->execute([$actualMatchId, $team_id]);
 
-            $insXI = $pdo->prepare("INSERT INTO match_playing_xi (match_id, team_id, player_id, batting_order) VALUES (?, ?, ?, ?)");
-            $order = 1;
-            foreach ($player_ids as $pid) {
-                $insXI->execute([$actualMatchId, $team_id, (int)$pid, $order++]);
-            }
-        } catch (Throwable $e) {}
+        $insXI = $pdo->prepare("INSERT INTO match_playing_xi (match_id, team_id, player_id, batting_order) VALUES (?, ?, ?, ?)");
+        $order = 1;
+        foreach ($player_ids as $pid) {
+            $insXI->execute([$actualMatchId, $team_id, (int)$pid, $order++]);
+        }
     }
 
-    $pdo->commit();
+    if ($pdo->inTransaction()) {
+        $pdo->commit();
+    }
 
     // Fetch team names
     $taStmt = $pdo->prepare("SELECT name FROM teams WHERE id = ?");
