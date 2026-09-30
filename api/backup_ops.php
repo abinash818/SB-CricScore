@@ -1,5 +1,5 @@
 <?php
-// api/backup_ops.php
+// api/backup_ops.php - MySQL Database SQL Export & Backup Manager
 require_once __DIR__ . '/../db.php';
 
 session_start();
@@ -10,8 +10,6 @@ if (empty($_SESSION['user_id'])) {
 }
 
 $action = $_REQUEST['action'] ?? '';
-$dbFile = __DIR__ . '/../cric.db';
-// Centralized backup directory
 $backupDir = __DIR__ . '/../data/backups/'; 
 
 if (!is_dir($backupDir)) {
@@ -19,9 +17,9 @@ if (!is_dir($backupDir)) {
     chmod($backupDir, 0775);
 }
 
-// 1. LIST ACTION (Required for settings.php to show the table)
+// 1. LIST ACTION
 if ($action === 'list') {
-    $files = glob($backupDir . "*.db");
+    $files = glob($backupDir . "*.sql");
     $list = [];
     foreach ($files as $f) {
         $list[] = [
@@ -36,20 +34,41 @@ if ($action === 'list') {
     exit;
 }
 
-// 2. CREATE BACKUP
+// 2. CREATE SQL BACKUP
 elseif ($action === 'create') {
     try {
-        $filename = 'cric_backup_' . date('Y-m-d_H-i-s') . '.db';
+        $filename = 'cric_mysql_backup_' . date('Y-m-d_H-i-s') . '.sql';
         $dest = $backupDir . $filename;
-        if (copy($dbFile, $dest)) {
-            echo json_encode(['success' => true, 'file' => $filename]);
-        } else {
-            throw new Exception("Failed to copy database file.");
+        
+        $tables = $pdo->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
+        $sqlDump = "-- SB CricScore MySQL Database Backup\n-- Generated: " . date('Y-m-d H:i:s') . "\n\nSET FOREIGN_KEY_CHECKS=0;\n\n";
+
+        foreach ($tables as $t) {
+            $createTableStmt = $pdo->query("SHOW CREATE TABLE `$t`")->fetch(PDO::FETCH_ASSOC);
+            $sqlDump .= "DROP TABLE IF EXISTS `$t`;\n" . $createTableStmt['Create Table'] . ";\n\n";
+
+            $rows = $pdo->query("SELECT * FROM `$t`")->fetchAll(PDO::FETCH_ASSOC);
+            if (!empty($rows)) {
+                $cols = array_keys($rows[0]);
+                $colNames = implode('`, `', $cols);
+                foreach ($rows as $r) {
+                    $vals = array_map(function($val) use ($pdo) {
+                        return $val === null ? 'NULL' : $pdo->quote($val);
+                    }, array_values($r));
+                    $sqlDump .= "INSERT INTO `$t` (`$colNames`) VALUES (" . implode(', ', $vals) . ");\n";
+                }
+                $sqlDump .= "\n";
+            }
         }
+        $sqlDump .= "SET FOREIGN_KEY_CHECKS=1;\n";
+
+        file_put_contents($dest, $sqlDump);
+        echo json_encode(['success' => true, 'file' => $filename]);
     } catch (Exception $e) {
         http_response_code(500);
         echo json_encode(['error' => $e->getMessage()]);
     }
+    exit;
 }
 
 // 3. DELETE BACKUP
@@ -63,6 +82,7 @@ elseif ($action === 'delete') {
         http_response_code(404);
         echo json_encode(['error' => 'File not found']);
     }
+    exit;
 }
 
 // 4. RESTORE BACKUP
@@ -70,16 +90,17 @@ elseif ($action === 'restore') {
     $file = basename($_POST['file'] ?? '');
     $source = $backupDir . $file;
     if ($file && file_exists($source)) {
-        $safetyBackup = $backupDir . 'pre_restore_' . date('Y-m-d_H-i-s') . '.db';
-        copy($dbFile, $safetyBackup);
-        $pdo = null; 
-        if (copy($source, $dbFile)) {
-            session_destroy();
-            echo json_encode(['success' => true]);
-        } else {
+        try {
+            $sql = file_get_contents($source);
+            $pdo->exec($sql);
+            echo json_encode(['success' => true, 'message' => 'Database restored successfully!']);
+        } catch (Exception $e) {
             http_response_code(500);
-            echo json_encode(['error' => 'Restore failed.']);
+            echo json_encode(['error' => 'Restore failed: ' . $e->getMessage()]);
         }
+    } else {
+        http_response_code(404);
+        echo json_encode(['error' => 'Backup file not found']);
     }
+    exit;
 }
-?>

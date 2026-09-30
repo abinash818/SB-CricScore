@@ -8,7 +8,7 @@
 - **Project Name:** SB CricScore (formerly CricScore)
 - **Primary Domain & URL:** `https://sbastro.com/tournament/` (or standalone root / Docker)
 - **GitHub Repository:** [abinash818/SB-CricScore](https://github.com/abinash818/SB-CricScore)
-- **Core Stack:** PHP 8+, MySQL (Production on Hostinger) / SQLite (`cric.db` for local dev), Vanilla JavaScript (ES6+), Vanilla CSS3 Design System.
+- **Core Stack:** PHP 8+, Pure MySQL 8+ / MariaDB (Production on Hostinger), Vanilla JavaScript (ES6+), Vanilla CSS3 Design System, Flutter 3.x Mobile App.
 - **Theme Palette:** Cosmic Midnight Dark (`#070710`), Luxury Gold (`#dfba73`, `#f5d77f`), Glassmorphism cards with border accents (`rgba(223, 186, 115, 0.15)`).
 
 ---
@@ -16,14 +16,14 @@
 ## 2. Directory Structure & Key Files
 ```text
 Cricscores-main/
-├── .env.example          # Sample database configuration (MySQL/SQLite)
+├── .env.example          # Sample MySQL database configuration
 ├── .gitignore            # Git exclusions (.env, data/backups/, etc.)
 ├── GEMINI.md             # Antigravity Context & Architecture Instructions (This file)
 ├── PROJECT_OVERVIEW.md   # Detailed feature list, API routes, and troubleshooting
 ├── README.md             # General project documentation
-├── cric.db               # Local SQLite database
-├── db.php                # Database Connection Hub (Auto-detects MySQL or SQLite)
-├── init_db.php           # Database Schema Initializer & Auto-Migration Script
+├── db.php                # Pure MySQL Database Connection Hub
+├── init_db.php           # MySQL Database Schema Initializer & Auto-Migration Script
+
 ├── index.php             # Main Landing Page / Tournament & Match Explorer
 ├── manifest.json         # PWA Manifest (SB CricScore LIVE)
 ├── style.css             # Unified Luxury Midnight Gold Design System

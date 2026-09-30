@@ -9,21 +9,14 @@ function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 function table_columns(PDO $pdo, string $table): array {
   $cols = [];
   try {
-    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-    if ($driver === 'sqlite') {
-      $st = $pdo->query("PRAGMA table_info($table)");
-      while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
-        $cols[$r['name']] = true;
-      }
-    } else {
-      $st = $pdo->query("DESCRIBE $table");
-      while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
-        $cols[$r['Field']] = true;
-      }
+    $st = $pdo->query("SHOW COLUMNS FROM `$table`");
+    while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
+      $cols[$r['Field']] = true;
     }
   } catch (Throwable $e) {}
   return $cols;
 }
+
 
 function json_out(int $code, array $payload){
   http_response_code($code);

@@ -16,35 +16,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/app_auth.php';
 
-$driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-
-// ── Auto-create feed tables if missing ──
-if ($driver === 'sqlite') {
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS feed_posts (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id      INTEGER NOT NULL,
-            content      TEXT NOT NULL,
-            image_url    TEXT DEFAULT NULL,
-            match_id     INTEGER DEFAULT NULL,
-            likes_count  INTEGER DEFAULT 0,
-            comments_count INTEGER DEFAULT 0,
-            created_at   TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE TABLE IF NOT EXISTS feed_likes (
-            post_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            PRIMARY KEY (post_id, user_id)
-        );
-        CREATE TABLE IF NOT EXISTS feed_comments (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            post_id    INTEGER NOT NULL,
-            user_id    INTEGER NOT NULL,
-            comment    TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-    ");
-} else {
+// ── Auto-create feed tables if missing (MySQL) ──
+try {
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS feed_posts (
             id             INT AUTO_INCREMENT PRIMARY KEY,
@@ -54,22 +27,27 @@ if ($driver === 'sqlite') {
             match_id       INT DEFAULT NULL,
             likes_count    INT DEFAULT 0,
             comments_count INT DEFAULT 0,
-            created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
+            created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_feed_user (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
         CREATE TABLE IF NOT EXISTS feed_likes (
             post_id INT NOT NULL,
             user_id INT NOT NULL,
             PRIMARY KEY (post_id, user_id)
-        );
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
         CREATE TABLE IF NOT EXISTS feed_comments (
             id         INT AUTO_INCREMENT PRIMARY KEY,
             post_id    INT NOT NULL,
             user_id    INT NOT NULL,
             comment    TEXT NOT NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_comment_post (post_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     ");
-}
+} catch (Throwable $e) {}
+
 
 $action = $_GET['action'] ?? ($_POST['action'] ?? 'list');
 

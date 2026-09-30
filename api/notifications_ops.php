@@ -1,6 +1,6 @@
 <?php
 // api/notifications_ops.php
-// Push Notifications & Live Match Alerts API
+// Push Notifications & Live Match Alerts API (Pure MySQL)
 // GET  /api/notifications_ops.php?action=list
 // POST /api/notifications_ops.php?action=save_token
 // POST /api/notifications_ops.php?action=read
@@ -15,50 +15,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/app_auth.php';
 
-// Auto-create notifications & fcm_tokens tables if missing
+// Auto-create notifications & fcm_tokens tables if missing (MySQL)
 try {
-    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-    if ($driver === 'sqlite') {
-        $pdo->exec("
-            CREATE TABLE IF NOT EXISTS notifications (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                title TEXT NOT NULL,
-                body TEXT NOT NULL,
-                type TEXT DEFAULT 'system',
-                target_id INTEGER DEFAULT 0,
-                is_read INTEGER DEFAULT 0,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-            CREATE TABLE IF NOT EXISTS fcm_tokens (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                token TEXT NOT NULL,
-                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-                UNIQUE(user_id)
-            );
-        ");
-    } else {
-        $pdo->exec("
-            CREATE TABLE IF NOT EXISTS notifications (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id INT,
-                title VARCHAR(255) NOT NULL,
-                body TEXT NOT NULL,
-                type VARCHAR(50) DEFAULT 'system',
-                target_id INT DEFAULT 0,
-                is_read TINYINT(1) DEFAULT 0,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS fcm_tokens (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id INT NOT NULL,
-                token VARCHAR(255) NOT NULL,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                UNIQUE KEY unique_user (user_id)
-            );
-        ");
-    }
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT,
+            title VARCHAR(255) NOT NULL,
+            body TEXT NOT NULL,
+            type VARCHAR(50) DEFAULT 'system',
+            target_id INT DEFAULT 0,
+            is_read TINYINT(1) DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+        CREATE TABLE IF NOT EXISTS fcm_tokens (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            token VARCHAR(255) NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY unique_user (user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ");
 } catch (Throwable $e) {}
 
 $user = app_optional_auth($pdo);
@@ -102,12 +80,7 @@ if ($action === 'save_token') {
     }
 
     $now = date('Y-m-d H:i:s');
-    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-    if ($driver === 'sqlite') {
-        $st = $pdo->prepare("INSERT OR REPLACE INTO fcm_tokens (user_id, token, updated_at) VALUES (?, ?, ?)");
-    } else {
-        $st = $pdo->prepare("INSERT INTO fcm_tokens (user_id, token, updated_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE token = VALUES(token), updated_at = VALUES(updated_at)");
-    }
+    $st = $pdo->prepare("INSERT INTO fcm_tokens (user_id, token, updated_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE token = VALUES(token), updated_at = VALUES(updated_at)");
     $st->execute([$userId, $token, $now]);
 
     echo json_encode(['success' => true, 'message' => 'Push token saved successfully']);

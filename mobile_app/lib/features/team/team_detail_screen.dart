@@ -383,16 +383,22 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
       if (mounted) {
         if (res['success'] == true) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${player['name']} added to team!'), backgroundColor: Colors.green),
+            SnackBar(content: Text('${player['name']} added to team! 🎉'), backgroundColor: Colors.green),
           );
+          _fetchTeamSquad();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(res['message'] ?? 'Failed to add'), backgroundColor: Colors.redAccent),
+            SnackBar(content: Text(res['message'] ?? 'Failed to add player'), backgroundColor: Colors.redAccent),
           );
         }
       }
-      _fetchTeamSquad();
-    } catch (_) {
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error adding player: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -413,19 +419,26 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
       if (mounted) {
         if (res['success'] == true) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('$name registered and added to squad!'), backgroundColor: Colors.green),
+            SnackBar(content: Text('$name registered and added to squad! 🎉'), backgroundColor: Colors.green),
           );
+          _fetchTeamSquad();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(res['message'] ?? 'Failed to register'), backgroundColor: Colors.redAccent),
+            SnackBar(content: Text(res['message'] ?? 'Failed to register player'), backgroundColor: Colors.redAccent),
           );
         }
       }
-      _fetchTeamSquad();
-    } catch (_) {
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error registering player: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
+
 
   Future<void> _handleSetCaptain(int playerId, String playerName) async {
     try {

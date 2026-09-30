@@ -1,6 +1,6 @@
 <?php
 // api/otp_send.php
-// Sends OTP via ping4sms SMS API for mobile login
+// Sends OTP via ping4sms SMS API for mobile login (Pure MySQL)
 // POST { "mobile": "9876543210" }
 
 header('Content-Type: application/json');
@@ -36,35 +36,19 @@ if (!preg_match('/^[6-9]\d{9}$/', $mobile)) {
     exit;
 }
 
-// ── Ensure mobile_otps table exists ──────────────────────────────────────────
-$driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-if ($driver === 'sqlite') {
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS mobile_otps (
-            id        INTEGER PRIMARY KEY AUTOINCREMENT,
-            mobile    TEXT NOT NULL,
-            otp       TEXT NOT NULL,
-            attempts  INTEGER NOT NULL DEFAULT 0,
-            expires_at TEXT NOT NULL,
-            verified  INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-    ");
-    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_otps_mobile ON mobile_otps(mobile)");
-} else {
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS mobile_otps (
-            id         INT AUTO_INCREMENT PRIMARY KEY,
-            mobile     VARCHAR(15) NOT NULL,
-            otp        VARCHAR(10) NOT NULL,
-            attempts   TINYINT NOT NULL DEFAULT 0,
-            expires_at DATETIME NOT NULL,
-            verified   TINYINT NOT NULL DEFAULT 0,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_otps_mobile (mobile)
-        )
-    ");
-}
+// ── Ensure mobile_otps table exists (MySQL) ──────────────────────────────────
+$pdo->exec("
+    CREATE TABLE IF NOT EXISTS mobile_otps (
+        id         INT AUTO_INCREMENT PRIMARY KEY,
+        mobile     VARCHAR(15) NOT NULL,
+        otp        VARCHAR(10) NOT NULL,
+        attempts   TINYINT NOT NULL DEFAULT 0,
+        expires_at DATETIME NOT NULL,
+        verified   TINYINT NOT NULL DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_otps_mobile (mobile)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+");
 
 // ── Rate limiting: max 3 OTP requests per 10 minutes per number ──────────────
 $tenMinsAgo = date('Y-m-d H:i:s', strtotime('-10 minutes'));

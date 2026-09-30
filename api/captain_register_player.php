@@ -95,12 +95,28 @@ if (!empty($mobile) && !$skip_otp) {
 
 try {
     // 3. Check if player already exists in this team
-    $dupCheck = $pdo->prepare("SELECT id FROM players WHERE team_id = ? AND (LOWER(name) = LOWER(?) OR (mobile = ? AND mobile != ''))");
-    $dupCheck->execute([$team_id, $name, $mobile]);
-    if ($dupCheck->fetch()) {
-        http_response_code(409);
-        echo json_encode(['success' => false, 'message' => 'Player already exists in this team squad.']);
-        exit;
+    if (!empty($mobile)) {
+        $dupCheck = $pdo->prepare("SELECT id, name FROM players WHERE team_id = ? AND mobile = ?");
+        $dupCheck->execute([$team_id, $mobile]);
+        $existing = $dupCheck->fetch();
+        if ($existing) {
+            echo json_encode([
+                'success' => false,
+                'message' => "Player with mobile {$mobile} ({$existing['name']}) is already in this squad!"
+            ]);
+            exit;
+        }
+    } else {
+        $dupCheck = $pdo->prepare("SELECT id, name FROM players WHERE team_id = ? AND LOWER(name) = LOWER(?)");
+        $dupCheck->execute([$team_id, $name]);
+        $existing = $dupCheck->fetch();
+        if ($existing) {
+            echo json_encode([
+                'success' => false,
+                'message' => "Player '{$name}' is already in this squad!"
+            ]);
+            exit;
+        }
     }
 
     // Inherit photo and details from app_users if available
@@ -118,13 +134,15 @@ try {
         } catch (\Throwable $e) {}
     }
 
-    // 4. Insert Player into Squad
+    // 4. Insert Player into Squad (Universal timestamp compatible with SQLite and MySQL)
+    $now = date('Y-m-d H:i:s');
     $insStmt = $pdo->prepare("
         INSERT INTO players (team_id, name, role, jersey_number, mobile, batting_style, bowling_style, profile_pic, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
-    $insStmt->execute([$team_id, $name, $role, $jersey_number, $mobile, $batting_style, $bowling_style, $profilePic]);
+    $insStmt->execute([$team_id, $name, $role, $jersey_number, $mobile, $batting_style, $bowling_style, $profilePic, $now]);
     $playerId = (int)$pdo->lastInsertId();
+
 
 
     // 5. If mobile given, ensure user record exists

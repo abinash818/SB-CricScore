@@ -1,5 +1,5 @@
 <?php
-// db.php - Universal Database Connection (SQLite & MySQL)
+// db.php - Pure MySQL Database Connection (Hostinger Production & Local MySQL)
 
 // Simple .env Loader
 if (!function_exists('loadEnvFile')) {
@@ -23,57 +23,29 @@ if (!function_exists('loadEnvFile')) {
     }
 }
 
-// Load .env if present
+// Load .env configuration
 loadEnvFile(__DIR__ . '/.env');
 
-$driver = strtolower(getenv('DB_DRIVER') ?: 'sqlite');
+$driver = 'mysql';
+
+$host   = getenv('DB_HOST') ?: 'localhost';
+$port   = getenv('DB_PORT') ?: '3306';
+$dbname = getenv('DB_NAME') ?: 'cricscore';
+$user   = getenv('DB_USER') ?: 'root';
+$pass   = getenv('DB_PASS') ?: '';
 
 try {
-    if ($driver === 'mysql') {
-        $host = getenv('DB_HOST') ?: 'localhost';
-        $port = getenv('DB_PORT') ?: '3306';
-        $dbname = getenv('DB_NAME') ?: 'cricscore';
-        $user = getenv('DB_USER') ?: 'root';
-        $pass = getenv('DB_PASS') ?: '';
-        
-        $dsn = "mysql:host={$host};port={$port};dbname={$dbname};charset=utf8mb4";
-        $pdo = new PDO($dsn, $user, $pass, [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false,
-        ]);
-    } else {
-        // SQLite
-        $sqlitePath = getenv('SQLITE_PATH') ?: (__DIR__ . '/cric.db');
-        if (!preg_match('/^[a-zA-Z]:|^[\/\\\\]/', $sqlitePath)) {
-            $sqlitePath = __DIR__ . '/' . $sqlitePath;
-        }
-        $dir = dirname($sqlitePath);
-        if (!is_dir($dir)) @mkdir($dir, 0775, true);
-
-        $pdo = new PDO('sqlite:' . $sqlitePath);
-        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-
-        // Enforce Foreign Keys & Journal mode
-        $pdo->exec('PRAGMA foreign_keys = ON;');
-        $pdo->exec('PRAGMA journal_mode = DELETE;');
-        $pdo->exec('PRAGMA synchronous = FULL;');
-    }
+    $dsn = "mysql:host={$host};port={$port};dbname={$dbname};charset=utf8mb4";
+    $pdo = new PDO($dsn, $user, $pass, [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES   => false,
+        PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci"
+    ]);
 } catch (PDOException $e) {
-    if ($driver === 'mysql') {
-        // Fallback to SQLite for local development if MySQL is unreachable
-        try {
-            $sqlitePath = __DIR__ . '/cric.db';
-            $pdo = new PDO('sqlite:' . $sqlitePath);
-            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-            $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-            $pdo->exec('PRAGMA foreign_keys = ON;');
-            $driver = 'sqlite';
-        } catch (Exception $sqe) {
-            die("Database Connection Error: " . htmlspecialchars($e->getMessage()));
-        }
-    } else {
-        die("Database Connection Error: " . htmlspecialchars($e->getMessage()));
-    }
+    http_response_code(500);
+    die(json_encode([
+        'success' => false,
+        'message' => 'MySQL Database Connection Error: ' . $e->getMessage()
+    ]));
 }

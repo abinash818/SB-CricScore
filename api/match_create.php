@@ -45,21 +45,13 @@ if ($team_a === $team_b) {
     exit;
 }
 
-// Function to fetch available columns for a table safely
+// Function to fetch available columns for a table safely (MySQL)
 function get_table_columns_safe(PDO $pdo, string $table): array {
     $cols = [];
     try {
-        $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-        if ($driver === 'sqlite') {
-            $st = $pdo->query("PRAGMA table_info($table)");
-            while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
-                $cols[strtolower($r['name'])] = true;
-            }
-        } else {
-            $st = $pdo->query("SHOW COLUMNS FROM $table");
-            while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
-                $cols[strtolower($r['Field'])] = true;
-            }
+        $st = $pdo->query("SHOW COLUMNS FROM `$table`");
+        while ($r = $st->fetch(PDO::FETCH_ASSOC)) {
+            $cols[strtolower($r['Field'])] = true;
         }
     } catch (Throwable $e) {}
     return $cols;
@@ -68,37 +60,21 @@ function get_table_columns_safe(PDO $pdo, string $table): array {
 try {
     // Check and auto-migrate missing columns if necessary
     $existingCols = get_table_columns_safe($pdo, 'matches');
-    $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
 
     if (!isset($existingCols['match_date'])) {
-        try {
-            $pdo->exec($driver === 'sqlite' ? "ALTER TABLE matches ADD COLUMN match_date TEXT DEFAULT NULL" : "ALTER TABLE matches ADD COLUMN match_date VARCHAR(30) DEFAULT NULL");
-            $existingCols['match_date'] = true;
-        } catch (Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE matches ADD COLUMN match_date VARCHAR(30) DEFAULT NULL"); $existingCols['match_date'] = true; } catch (Throwable $e) {}
     }
     if (!isset($existingCols['match_time'])) {
-        try {
-            $pdo->exec($driver === 'sqlite' ? "ALTER TABLE matches ADD COLUMN match_time TEXT DEFAULT NULL" : "ALTER TABLE matches ADD COLUMN match_time VARCHAR(30) DEFAULT NULL");
-            $existingCols['match_time'] = true;
-        } catch (Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE matches ADD COLUMN match_time VARCHAR(30) DEFAULT NULL"); $existingCols['match_time'] = true; } catch (Throwable $e) {}
     }
     if (!isset($existingCols['stage'])) {
-        try {
-            $pdo->exec($driver === 'sqlite' ? "ALTER TABLE matches ADD COLUMN stage TEXT DEFAULT 'League'" : "ALTER TABLE matches ADD COLUMN stage VARCHAR(50) DEFAULT 'League'");
-            $existingCols['stage'] = true;
-        } catch (Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE matches ADD COLUMN stage VARCHAR(50) DEFAULT 'League'"); $existingCols['stage'] = true; } catch (Throwable $e) {}
     }
     if (!isset($existingCols['wickets_limit'])) {
-        try {
-            $pdo->exec($driver === 'sqlite' ? "ALTER TABLE matches ADD COLUMN wickets_limit INTEGER DEFAULT 10" : "ALTER TABLE matches ADD COLUMN wickets_limit INT DEFAULT 10");
-            $existingCols['wickets_limit'] = true;
-        } catch (Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE matches ADD COLUMN wickets_limit INT DEFAULT 10"); $existingCols['wickets_limit'] = true; } catch (Throwable $e) {}
     }
     if (!isset($existingCols['is_final'])) {
-        try {
-            $pdo->exec($driver === 'sqlite' ? "ALTER TABLE matches ADD COLUMN is_final INTEGER DEFAULT 0" : "ALTER TABLE matches ADD COLUMN is_final TINYINT(1) DEFAULT 0");
-            $existingCols['is_final'] = true;
-        } catch (Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE matches ADD COLUMN is_final TINYINT(1) DEFAULT 0"); $existingCols['is_final'] = true; } catch (Throwable $e) {}
     }
 
     $venue_name = trim($input['venue_name'] ?? ($input['ground_name'] ?? ''));
@@ -110,35 +86,21 @@ try {
     $match_code = 'SB' . strtoupper(substr(md5(uniqid((string)mt_rand(), true)), 0, 4));
 
     if (!isset($existingCols['match_code'])) {
-        try {
-            $pdo->exec($driver === 'sqlite' ? "ALTER TABLE matches ADD COLUMN match_code TEXT DEFAULT NULL" : "ALTER TABLE matches ADD COLUMN match_code VARCHAR(30) DEFAULT NULL");
-            $existingCols['match_code'] = true;
-        } catch (Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE matches ADD COLUMN match_code VARCHAR(30) DEFAULT NULL"); $existingCols['match_code'] = true; } catch (Throwable $e) {}
     }
     if (!isset($existingCols['venue_name'])) {
-        try {
-            $pdo->exec($driver === 'sqlite' ? "ALTER TABLE matches ADD COLUMN venue_name TEXT DEFAULT NULL" : "ALTER TABLE matches ADD COLUMN venue_name VARCHAR(150) DEFAULT NULL");
-            $existingCols['venue_name'] = true;
-        } catch (Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE matches ADD COLUMN venue_name VARCHAR(150) DEFAULT NULL"); $existingCols['venue_name'] = true; } catch (Throwable $e) {}
     }
     if (!isset($existingCols['ball_type'])) {
-        try {
-            $pdo->exec($driver === 'sqlite' ? "ALTER TABLE matches ADD COLUMN ball_type TEXT DEFAULT 'tennis_light'" : "ALTER TABLE matches ADD COLUMN ball_type VARCHAR(30) DEFAULT 'tennis_light'");
-            $existingCols['ball_type'] = true;
-        } catch (Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE matches ADD COLUMN ball_type VARCHAR(30) DEFAULT 'tennis_light'"); $existingCols['ball_type'] = true; } catch (Throwable $e) {}
     }
     if (!isset($existingCols['invite_status'])) {
-        try {
-            $pdo->exec($driver === 'sqlite' ? "ALTER TABLE matches ADD COLUMN invite_status TEXT DEFAULT 'accepted'" : "ALTER TABLE matches ADD COLUMN invite_status VARCHAR(30) DEFAULT 'accepted'");
-            $existingCols['invite_status'] = true;
-        } catch (Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE matches ADD COLUMN invite_status VARCHAR(30) DEFAULT 'accepted'"); $existingCols['invite_status'] = true; } catch (Throwable $e) {}
     }
     if (!isset($existingCols['youtube_live_url'])) {
-        try {
-            $pdo->exec($driver === 'sqlite' ? "ALTER TABLE matches ADD COLUMN youtube_live_url TEXT DEFAULT NULL" : "ALTER TABLE matches ADD COLUMN youtube_live_url VARCHAR(255) DEFAULT NULL");
-            $existingCols['youtube_live_url'] = true;
-        } catch (Throwable $e) {}
+        try { $pdo->exec("ALTER TABLE matches ADD COLUMN youtube_live_url VARCHAR(255) DEFAULT NULL"); $existingCols['youtube_live_url'] = true; } catch (Throwable $e) {}
     }
+
 
     $pdo->beginTransaction();
     

@@ -82,75 +82,39 @@ if ($otpRow['otp'] !== $otp) {
 // ── Mark OTP as verified ──────────────────────────────────────────────────────
 $pdo->prepare("UPDATE mobile_otps SET verified=1 WHERE id=?")->execute([$otpRow['id']]);
 
-// ── Ensure app_users table exists (mobile-auth users, separate from admin users) ──
-if ($driver === 'sqlite') {
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS app_users (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            mobile       TEXT NOT NULL UNIQUE,
-            name         TEXT DEFAULT NULL,
-            dob          TEXT DEFAULT NULL,
-            city         TEXT DEFAULT NULL,
-            profile_pic  TEXT DEFAULT NULL,
-            batting_style TEXT DEFAULT NULL,
-            bowling_style TEXT DEFAULT NULL,
-            role          TEXT DEFAULT NULL,
-            jersey_number TEXT DEFAULT NULL,
-            preferred_format TEXT DEFAULT NULL,
-            fcm_token    TEXT DEFAULT NULL,
-            language     TEXT DEFAULT 'en',
-            is_blocked   INTEGER DEFAULT 0,
-            profile_complete INTEGER DEFAULT 0,
-            created_at   TEXT NOT NULL DEFAULT (datetime('now')),
-            last_login   TEXT DEFAULT NULL
-        )
-    ");
-} else {
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS app_users (
-            id           INT AUTO_INCREMENT PRIMARY KEY,
-            mobile       VARCHAR(15) NOT NULL UNIQUE,
-            name         VARCHAR(100) DEFAULT NULL,
-            dob          DATE DEFAULT NULL,
-            city         VARCHAR(100) DEFAULT NULL,
-            profile_pic  VARCHAR(255) DEFAULT NULL,
-            batting_style VARCHAR(50) DEFAULT NULL,
-            bowling_style VARCHAR(50) DEFAULT NULL,
-            role          VARCHAR(50) DEFAULT NULL,
-            jersey_number VARCHAR(5) DEFAULT NULL,
-            preferred_format VARCHAR(20) DEFAULT NULL,
-            fcm_token    VARCHAR(255) DEFAULT NULL,
-            language     VARCHAR(5) DEFAULT 'en',
-            is_blocked   TINYINT DEFAULT 0,
-            profile_complete TINYINT DEFAULT 0,
-            created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-            last_login   DATETIME DEFAULT NULL
-        )
-    ");
-}
+// ── Ensure app_users & api_tokens tables exist (MySQL) ──
+$pdo->exec("
+    CREATE TABLE IF NOT EXISTS app_users (
+        id           INT AUTO_INCREMENT PRIMARY KEY,
+        mobile       VARCHAR(15) NOT NULL UNIQUE,
+        name         VARCHAR(100) DEFAULT NULL,
+        dob          DATE DEFAULT NULL,
+        city         VARCHAR(100) DEFAULT NULL,
+        profile_pic  VARCHAR(255) DEFAULT NULL,
+        batting_style VARCHAR(50) DEFAULT 'Right Hand Bat',
+        bowling_style VARCHAR(50) DEFAULT 'Right Arm Medium',
+        role          VARCHAR(50) DEFAULT 'All-Rounder',
+        jersey_number VARCHAR(10) DEFAULT NULL,
+        preferred_format VARCHAR(20) DEFAULT NULL,
+        fcm_token    VARCHAR(255) DEFAULT NULL,
+        language     VARCHAR(10) DEFAULT 'en',
+        is_blocked   TINYINT DEFAULT 0,
+        profile_complete TINYINT DEFAULT 0,
+        created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_login   DATETIME DEFAULT NULL,
+        UNIQUE KEY uq_app_users_mob (mobile)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-// ── Ensure api_tokens table exists ────────────────────────────────────────────
-if ($driver === 'sqlite') {
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS api_tokens (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id    INTEGER NOT NULL,
-            token      TEXT NOT NULL UNIQUE,
-            expires_at TEXT DEFAULT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-    ");
-} else {
-    $pdo->exec("
-        CREATE TABLE IF NOT EXISTS api_tokens (
-            id         INT AUTO_INCREMENT PRIMARY KEY,
-            user_id    INT NOT NULL,
-            token      VARCHAR(128) NOT NULL UNIQUE,
-            expires_at DATETIME DEFAULT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    ");
-}
+    CREATE TABLE IF NOT EXISTS api_tokens (
+        id         INT AUTO_INCREMENT PRIMARY KEY,
+        user_id    INT NOT NULL,
+        token      VARCHAR(255) NOT NULL UNIQUE,
+        expires_at DATETIME DEFAULT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_tokens_user (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+");
+
 
 // ── Find or create app_user ───────────────────────────────────────────────────
 $userStmt = $pdo->prepare("SELECT * FROM app_users WHERE mobile = ?");
