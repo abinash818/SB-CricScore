@@ -352,20 +352,23 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
         return AlertDialog(
           backgroundColor: AppTheme.cardBg,
           title: Text('MATCH FINISHED! 🏆', textAlign: TextAlign.center, style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontWeight: FontWeight.bold)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '🎉 $winnerTeam WON THE MATCH!',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Final Score: $_currentBattingTeamName $_totalRuns/$_totalWickets (${floorOvers(_legalBalls)} ov)',
-                style: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
-              ),
-            ],
+          content: SizedBox(
+            width: 300,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '🎉 $winnerTeam WON THE MATCH!',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Final Score: $_currentBattingTeamName $_totalRuns/$_totalWickets (${floorOvers(_legalBalls)} ov)',
+                  style: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
+                ),
+              ],
+            ),
           ),
           actions: [
             ElevatedButton(
@@ -464,26 +467,29 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
         return AlertDialog(
           backgroundColor: AppTheme.cardBg,
           title: Text('Wicket Fallen ☝️', style: GoogleFonts.outfit(color: AppTheme.primaryGold)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              'Bowled',
-              'Caught',
-              'LBW',
-              'Run Out',
-              'Stumped',
-              'Hit Wicket',
-              'Retired Hurt'
-            ].map((type) {
-              return ListTile(
-                title: Text(type, style: const TextStyle(color: AppTheme.textPrimary)),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: AppTheme.primaryGold),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _recordBall(runs: 0, isWicket: true, wicketType: type);
-                },
-              );
-            }).toList(),
+          content: SizedBox(
+            width: 300,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                'Bowled',
+                'Caught',
+                'LBW',
+                'Run Out',
+                'Stumped',
+                'Hit Wicket',
+                'Retired Hurt'
+              ].map((type) {
+                return ListTile(
+                  title: Text(type, style: const TextStyle(color: AppTheme.textPrimary)),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: AppTheme.primaryGold),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _recordBall(runs: 0, isWicket: true, wicketType: type);
+                  },
+                );
+              }).toList(),
+            ),
           ),
         );
       },

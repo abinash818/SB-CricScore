@@ -89,33 +89,36 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> with Si
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF121222),
         title: const Text('⚡ Auto-Generate Fixtures', style: TextStyle(color: Color(0xFFDFBA73))),
-        content: StatefulBuilder(
-          builder: (context, setDlgState) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Generate match fixtures automatically for all participating teams.',
-                style: TextStyle(color: Colors.white70, fontSize: 13),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                value: selectedType,
-                dropdownColor: const Color(0xFF121222),
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
-                  labelText: 'Fixture Type',
-                  labelStyle: TextStyle(color: Color(0xFFDFBA73)),
+        content: SizedBox(
+          width: 340,
+          child: StatefulBuilder(
+            builder: (context, setDlgState) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Generate match fixtures automatically for all participating teams.',
+                  style: TextStyle(color: Colors.white70, fontSize: 13),
                 ),
-                items: const [
-                  DropdownMenuItem(value: 'single', child: Text('Single Round Robin (All vs All 1x)')),
-                  DropdownMenuItem(value: 'double', child: Text('Double Round Robin (Home & Away)')),
-                  DropdownMenuItem(value: 'knockout', child: Text('Single Knockout Bracket')),
-                ],
-                onChanged: (val) {
-                  if (val != null) setDlgState(() => selectedType = val);
-                },
-              ),
-            ],
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedType,
+                  dropdownColor: const Color(0xFF121222),
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Fixture Type',
+                    labelStyle: TextStyle(color: Color(0xFFDFBA73)),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'single', child: Text('Single Round Robin (All vs All 1x)')),
+                    DropdownMenuItem(value: 'double', child: Text('Double Round Robin (Home & Away)')),
+                    DropdownMenuItem(value: 'knockout', child: Text('Single Knockout Bracket')),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) setDlgState(() => selectedType = val);
+                  },
+                ),
+              ],
+            ),
           ),
         ),
         actions: [
@@ -183,50 +186,53 @@ class _TournamentDetailScreenState extends State<TournamentDetailScreen> with Si
           textAlign: TextAlign.center,
           style: const TextStyle(color: Color(0xFFDFBA73), fontWeight: FontWeight.bold, fontSize: 17),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              tName,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
+        content: SizedBox(
+          width: 320,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                tName,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
               ),
-              child: QrImageView(
-                data: qrPayload,
-                version: QrVersions.auto,
-                size: 160.0,
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: QrImageView(
+                  data: qrPayload,
+                  version: QrVersions.auto,
+                  size: 160.0,
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Team Captains can scan this QR in SB CricScore App or use the WhatsApp link to register their team & squad directly!',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white70, fontSize: 12),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF25D366),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              const SizedBox(height: 12),
+              const Text(
+                'Team Captains can scan this QR in SB CricScore App or use the WhatsApp link to register their team & squad directly!',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white70, fontSize: 12),
               ),
-              icon: const Icon(Icons.share, size: 18),
-              label: const Text('Share Registration Link on WhatsApp', style: TextStyle(fontWeight: FontWeight.bold)),
-              onPressed: () {
-                Share.share(
-                  '🏆 Register your Cricket Team for $tName!\nScan QR in SB CricScore App or Register Online:\n$shareLink',
-                  subject: 'Tournament Team Registration',
-                );
-              },
-            ),
-          ],
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF25D366),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                icon: const Icon(Icons.share, size: 18),
+                label: const Text('Share Registration Link on WhatsApp', style: TextStyle(fontWeight: FontWeight.bold)),
+                onPressed: () {
+                  Share.share(
+                    '🏆 Register your Cricket Team for $tName!\nScan QR in SB CricScore App or Register Online:\n$shareLink',
+                    subject: 'Tournament Team Registration',
+                  );
+                },
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(

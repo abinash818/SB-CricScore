@@ -232,145 +232,156 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
-        return AlertDialog(
+        return Dialog(
           backgroundColor: AppTheme.cardBg,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
             side: const BorderSide(color: AppTheme.primaryGold, width: 1.5),
           ),
-          title: Text(
-            isScheduled ? 'Match Scheduled! 📅' : 'Match Created! 🎉',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontWeight: FontWeight.bold),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  teamBName.isNotEmpty ? '$teamAName vs $teamBName' : '$teamAName (Waiting for Opponent)',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.outfit(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 10),
-                // Match PIN Card
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primaryGold.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppTheme.primaryGold.withValues(alpha: 0.4)),
+          child: Container(
+            width: 360,
+            padding: const EdgeInsets.all(20),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isScheduled ? 'Match Scheduled! 📅' : 'Match Created! 🎉',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontWeight: FontWeight.bold, fontSize: 18),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  const SizedBox(height: 12),
+                  Text(
+                    teamBName.isNotEmpty ? '$teamAName vs $teamBName' : '$teamAName (Waiting for Opponent)',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.outfit(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 10),
+                  // Match PIN Card
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryGold.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppTheme.primaryGold.withValues(alpha: 0.4)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'PIN: $matchCode',
+                          style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          tooltip: 'Copy PIN',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          icon: const Icon(Icons.copy, size: 18, color: AppTheme.primaryGold),
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: matchCode));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Match PIN copied to clipboard! 📋'), backgroundColor: Colors.green),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // QR Code
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: QrImageView(
+                      data: 'sbcric_match:$matchCode',
+                      version: QrVersions.auto,
+                      size: 160.0,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Opponent Captain can scan this QR code or enter PIN in SB CricScore to join!',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // WhatsApp Share Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF25D366),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.share, size: 18, color: Colors.white),
+                      label: const Text('Share Invite on WhatsApp', style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: () async {
+                        final shareMsg = '🏏 Match Invite from $teamAName!\nMatch PIN: $matchCode\nGround: ${_venueController.text.trim()}\nJoin Link: $shareLink';
+                        try {
+                          final waUrl = Uri.parse('https://api.whatsapp.com/send?text=${Uri.encodeComponent(shareMsg)}');
+                          if (await canLaunchUrl(waUrl)) {
+                            await launchUrl(waUrl, mode: LaunchMode.externalApplication);
+                          } else {
+                            await Share.share(shareMsg, subject: 'SB CricScore Match Invite');
+                          }
+                        } catch (_) {
+                          Clipboard.setData(ClipboardData(text: shareMsg));
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Invite copied to clipboard! 📋'), backgroundColor: Colors.green),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      Text(
-                        'PIN: $matchCode',
-                        style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        tooltip: 'Copy PIN',
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        icon: const Icon(Icons.copy, size: 18, color: AppTheme.primaryGold),
+                      TextButton(
                         onPressed: () {
-                          Clipboard.setData(ClipboardData(text: matchCode));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Match PIN copied to clipboard! 📋'), backgroundColor: Colors.green),
-                          );
+                          Navigator.pop(ctx);
+                          Navigator.pop(context);
                         },
+                        child: const Text('Go to Home', style: TextStyle(color: AppTheme.textMuted)),
                       ),
+                      if (!isScheduled && _selectedTeamB != null) ...[
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryGold, foregroundColor: const Color(0xFF070710)),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => TossScreen(
+                                  matchId: matchId,
+                                  teamAId: _selectedTeamA!,
+                                  teamBId: _selectedTeamB!,
+                                  teamAName: teamAName,
+                                  teamBName: teamBName,
+                                  oversLimit: int.tryParse(_oversController.text) ?? 10,
+                                ),
+                              ),
+                            );
+                          },
+                          child: const Text('Go to Toss 🪙', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ],
                     ],
                   ),
-                ),
-                const SizedBox(height: 14),
-
-                // QR Code
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: QrImageView(
-                    data: 'sbcric_match:$matchCode',
-                    version: QrVersions.auto,
-                    size: 160.0,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Opponent Captain can scan this QR code or enter PIN in SB CricScore to join!',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
-                ),
-                const SizedBox(height: 14),
-
-                // WhatsApp Share Button
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF25D366),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    icon: const Icon(Icons.share, size: 18, color: Colors.white),
-                    label: const Text('Share Invite on WhatsApp', style: TextStyle(fontWeight: FontWeight.bold)),
-                    onPressed: () async {
-                      final shareMsg = '🏏 Match Invite from $teamAName!\nMatch PIN: $matchCode\nGround: ${_venueController.text.trim()}\nJoin Link: $shareLink';
-                      try {
-                        final waUrl = Uri.parse('https://api.whatsapp.com/send?text=${Uri.encodeComponent(shareMsg)}');
-                        if (await canLaunchUrl(waUrl)) {
-                          await launchUrl(waUrl, mode: LaunchMode.externalApplication);
-                        } else {
-                          await Share.share(shareMsg, subject: 'SB CricScore Match Invite');
-                        }
-                      } catch (_) {
-                        Clipboard.setData(ClipboardData(text: shareMsg));
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Invite copied to clipboard! 📋'), backgroundColor: Colors.green),
-                          );
-                        }
-                      }
-                    },
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(ctx);
-                Navigator.pop(context);
-              },
-              child: const Text('Go to Home', style: TextStyle(color: AppTheme.textMuted)),
-            ),
-            if (!isScheduled && _selectedTeamB != null)
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryGold, foregroundColor: const Color(0xFF070710)),
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => TossScreen(
-                        matchId: matchId,
-                        teamAId: _selectedTeamA!,
-                        teamBId: _selectedTeamB!,
-                        teamAName: teamAName,
-                        teamBName: teamBName,
-                        oversLimit: int.tryParse(_oversController.text) ?? 10,
-                      ),
-                    ),
-                  );
-                },
-                child: const Text('Proceed to Toss 🪙', style: TextStyle(fontWeight: FontWeight.bold)),
-              ),
-          ],
         );
       },
     );
