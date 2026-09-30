@@ -16,6 +16,20 @@ try {
     echo "ℹ Columns likely exist already.\n";
 }
 
+// 1B. Modify matches.team_b_id to nullable
+try {
+    $pdo->exec("ALTER TABLE `matches` MODIFY COLUMN `team_b_id` INT NULL DEFAULT NULL");
+    echo "✔ Modified matches.team_b_id to NULLABLE\n";
+} catch (Exception $e) {
+    echo "ℹ team_b_id alter: " . $e->getMessage() . "\n";
+}
+try {
+    $pdo->exec("ALTER TABLE `matches` MODIFY COLUMN `toss_winner_team_id` INT NULL DEFAULT NULL");
+    echo "✔ Modified matches.toss_winner_team_id to NULLABLE\n";
+} catch (Exception $e) {
+    echo "ℹ toss_winner_team_id alter: " . $e->getMessage() . "\n";
+}
+
 // 2. Backfill Data
 $stmt = $pdo->query("SELECT id FROM innings");
 $ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
