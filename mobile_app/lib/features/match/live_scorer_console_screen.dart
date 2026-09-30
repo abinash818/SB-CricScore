@@ -116,8 +116,50 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
     _bowlerId = widget.initialBowlerId;
     _bowlerName = widget.initialBowlerName ?? 'Bowler';
 
+    _fetchMatchState();
     _loadSquadsAndVerifyLineup();
     _fetchScorerStatus();
+  }
+
+  Future<void> _fetchMatchState() async {
+    try {
+      final res = await _apiService.dio.get('/match_get.php', queryParameters: {'match_id': widget.matchId});
+      if (res.data != null && mounted) {
+        final inningsList = res.data['innings'] as List? ?? [];
+        final chase = res.data['chase'];
+
+        dynamic targetInn;
+        if (inningsList.isNotEmpty) {
+          final matches = inningsList.where((i) => int.tryParse(i['id']?.toString() ?? '') == _currentInningsId);
+          targetInn = matches.isNotEmpty ? matches.first : inningsList.last;
+        }
+
+        if (targetInn != null) {
+          final summary = targetInn['summary'] ?? {};
+          final int target = int.tryParse(targetInn['target']?.toString() ?? (chase?['target']?.toString() ?? '')) ?? 0;
+          final int innNo = int.tryParse(targetInn['innings_no']?.toString() ?? '1') ?? 1;
+          final int batId = int.tryParse(targetInn['batting_team_id']?.toString() ?? '0') ?? _currentBattingTeamId;
+          final String batName = targetInn['batting_team']?.toString() ?? _currentBattingTeamName;
+
+          setState(() {
+            _currentInningsId = int.tryParse(targetInn['id']?.toString() ?? '') ?? _currentInningsId;
+            _currentInningsNo = innNo;
+            _currentBattingTeamId = batId;
+            _currentBattingTeamName = batName;
+            _totalRuns = int.tryParse(summary['runs']?.toString() ?? '0') ?? 0;
+            _totalWickets = int.tryParse(summary['wickets']?.toString() ?? '0') ?? 0;
+            _legalBalls = int.tryParse(summary['legal_balls']?.toString() ?? '0') ?? 0;
+            if (target > 0) _targetRuns = target;
+
+            final recList = summary['recent_balls'] as List? ?? [];
+            if (recList.isNotEmpty) {
+              _thisOver = recList.map((e) => e.toString()).toList();
+              if (_thisOver.length > 6) _thisOver = _thisOver.sublist(_thisOver.length - 6);
+            }
+          });
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _fetchScorerStatus() async {
@@ -1052,6 +1094,7 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
     List<dynamic> chasingSquad = [];
     int? nextScorerId;
     String? nextScorerName;
+    bool transferScoring = false; // Default: Ask if user wants to transfer or keep scoring
 
     try {
       final res = await _apiService.dio.get('/team_ops.php', queryParameters: {
@@ -1060,10 +1103,10 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
       });
       chasingSquad = res.data['squad'] as List? ?? [];
       if (chasingSquad.isNotEmpty) {
-        final capt = chasingSquad.firstWhere(
+        final matches = chasingSquad.where(
           (p) => p['is_captain'] == 1 || p['is_captain'] == '1' || (p['team_role'] ?? '') == 'leader',
-          orElse: () => chasingSquad.first,
         );
+        final capt = matches.isNotEmpty ? matches.first : chasingSquad.first;
         nextScorerId = int.tryParse(capt['id'].toString());
         nextScorerName = capt['name']?.toString() ?? 'Player';
       }
@@ -1125,26 +1168,91 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
 
                 Text(
-                  '🔄 Handover Scoring to $_currentBowlingTeamName:',
+                  'Who will score Innings 2? 🏏',
                   style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontWeight: FontWeight.bold, fontSize: 14),
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Batting team now scores their own chase. Select scorekeeper from their squad:',
-                  style: TextStyle(color: Colors.white60, fontSize: 12),
-                ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
 
-                if (chasingSquad.isNotEmpty)
+                // Choice 1: Continue myself
+                InkWell(
+                  onTap: () => setModalState(() => transferScoring = false),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: !transferScoring ? AppTheme.primaryGold.withValues(alpha: 0.15) : const Color(0xFF131326),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: !transferScoring ? AppTheme.primaryGold : Colors.white12,
+                        width: !transferScoring ? 1.5 : 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          !transferScoring ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                          color: !transferScoring ? AppTheme.primaryGold : Colors.white60,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('I will continue scoring Innings 2 👤', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                              Text('Keep scoring as Umpire or current scorer (${_activeScorerName ?? "You"})', style: const TextStyle(color: Colors.white60, fontSize: 11)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Choice 2: Transfer to opponent team
+                InkWell(
+                  onTap: () => setModalState(() => transferScoring = true),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: transferScoring ? AppTheme.primaryGold.withValues(alpha: 0.15) : const Color(0xFF131326),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: transferScoring ? AppTheme.primaryGold : Colors.white12,
+                        width: transferScoring ? 1.5 : 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          transferScoring ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                          color: transferScoring ? AppTheme.primaryGold : Colors.white60,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Transfer scoring to $_currentBowlingTeamName 📲', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                              const Text('Let opponent scorekeeper / captain enter scores on their device', style: TextStyle(color: Colors.white60, fontSize: 11)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                if (transferScoring && chasingSquad.isNotEmpty) ...[
                   DropdownButtonFormField<int>(
                     isExpanded: true,
                     initialValue: nextScorerId,
                     dropdownColor: const Color(0xFF131326),
                     decoration: const InputDecoration(
-                      labelText: 'Innings 2 Scorekeeper ✍️',
+                      labelText: 'Select Opponent Scorekeeper / Captain ✍️',
                       prefixIcon: Icon(Icons.person, color: AppTheme.primaryGold),
                     ),
                     items: chasingSquad.map<DropdownMenuItem<int>>((p) {
@@ -1161,12 +1269,15 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
                     onChanged: (val) {
                       setModalState(() {
                         nextScorerId = val;
-                        final sel = chasingSquad.firstWhere((p) => int.parse(p['id'].toString()) == val, orElse: () => null);
-                        if (sel != null) nextScorerName = sel['name'];
+                        final matches = chasingSquad.where((p) => int.parse(p['id'].toString()) == val);
+                        if (matches.isNotEmpty) {
+                          nextScorerName = matches.first['name'];
+                        }
                       });
                     },
                   ),
-                const SizedBox(height: 24),
+                  const SizedBox(height: 16),
+                ],
 
                 SizedBox(
                   width: double.infinity,
@@ -1179,7 +1290,9 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
                     ),
                     onPressed: () async {
                       Navigator.pop(ctx);
-                      _startInnings2(target: target, scorerId: nextScorerId, scorerName: nextScorerName);
+                      final finalScorerId = transferScoring ? nextScorerId : _activeScorerPlayerId;
+                      final finalScorerName = transferScoring ? nextScorerName : _activeScorerName;
+                      _startInnings2(target: target, scorerId: finalScorerId, scorerName: finalScorerName);
                     },
                     child: const Text('START INNINGS 2 (CHASE) 🚀', style: TextStyle(fontWeight: FontWeight.bold)),
                   ),

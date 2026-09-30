@@ -175,7 +175,7 @@ class _LiveMatchViewerScreenState extends State<LiveMatchViewerScreen> {
       final int innId = int.tryParse(_matchData?['active_innings_id']?.toString() ?? '1') ?? 1;
       final int batTeamId = int.tryParse(_matchData?['batting_team_id']?.toString() ?? '0') ?? teamAId;
       final int bowlTeamId = int.tryParse(_matchData?['bowling_team_id']?.toString() ?? '0') ?? teamBId;
-      final String batTeamName = _matchData?['batting_team']?.toString() ?? teamAName;
+      final String batTeamName = _matchData?['batting_team']?.toString() ?? ((batTeamId == teamAId) ? teamAName : teamBName);
       final String bowlTeamName = (batTeamId == teamAId) ? teamBName : teamAName;
 
       Navigator.push(
@@ -189,6 +189,7 @@ class _LiveMatchViewerScreenState extends State<LiveMatchViewerScreen> {
             battingTeamName: batTeamName,
             bowlingTeamName: bowlTeamName,
             oversLimit: oversLimit,
+            initialScorerName: _matchData?['active_scorer_name']?.toString(),
           ),
         ),
       ).then((_) => _fetchLiveMatch());
@@ -560,6 +561,22 @@ class _LiveMatchViewerScreenState extends State<LiveMatchViewerScreen> {
           ),
         ),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: (matchStatus != 'completed')
+          ? FloatingActionButton.extended(
+              backgroundColor: AppTheme.primaryGold,
+              foregroundColor: const Color(0xFF070710),
+              elevation: 6,
+              icon: const Icon(Icons.sports_cricket, size: 22),
+              label: Text(
+                (matchStatus == 'scheduled' || matchStatus == 'pending_toss')
+                    ? '🪙 START MATCH TOSS'
+                    : '✍️ ENTER LIVE SCORES',
+                style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.5),
+              ),
+              onPressed: _openScorerConsoleOrToss,
+            )
+          : null,
     );
   }
 }
