@@ -30,8 +30,8 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
   final TextEditingController _oversController = TextEditingController(text: '10');
   final TextEditingController _wicketsController = TextEditingController(text: '10');
 
-  String _selectedDistrict = LocationService().currentDistrict;
-  String _selectedState = LocationService().currentState;
+  String _selectedDistrict = LocationService().currentDistrict.value;
+  String _selectedState = LocationService().currentState.value;
 
   List<dynamic> _teams = [];
   List<dynamic> _hostEligibleTeams = [];
@@ -948,15 +948,11 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                     InkWell(
                       borderRadius: BorderRadius.circular(12),
                       onTap: () async {
-                        final res = await LocationPickerDialog.show(
-                          context,
-                          currentDistrict: _selectedDistrict,
-                          currentState: _selectedState,
-                        );
-                        if (res != null) {
+                        await LocationPickerDialog.show(context);
+                        if (mounted) {
                           setState(() {
-                            _selectedDistrict = res.district;
-                            _selectedState = res.state;
+                            _selectedDistrict = LocationService().currentDistrict.value;
+                            _selectedState = LocationService().currentState.value;
                           });
                         }
                       },
