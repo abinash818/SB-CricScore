@@ -283,6 +283,13 @@ try {
     if (!in_array('profile_pic', $pCols)) $pdo->exec("ALTER TABLE players ADD COLUMN profile_pic VARCHAR(255) DEFAULT NULL");
     if (!in_array('is_captain', $pCols)) $pdo->exec("ALTER TABLE players ADD COLUMN is_captain TINYINT(1) DEFAULT 0");
 
+    $tourCols = $pdo->query("SHOW COLUMNS FROM tournaments")->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array('state', $tourCols)) $pdo->exec("ALTER TABLE tournaments ADD COLUMN state VARCHAR(100) NOT NULL DEFAULT 'Tamil Nadu'");
+    if (!in_array('district', $tourCols)) $pdo->exec("ALTER TABLE tournaments ADD COLUMN district VARCHAR(100) NOT NULL DEFAULT 'Coimbatore'");
+    if (!in_array('city_area', $tourCols)) $pdo->exec("ALTER TABLE tournaments ADD COLUMN city_area VARCHAR(150) DEFAULT NULL");
+    if (!in_array('venue_ground', $tourCols)) $pdo->exec("ALTER TABLE tournaments ADD COLUMN venue_ground VARCHAR(200) DEFAULT NULL");
+    if (!in_array('pincode', $tourCols)) $pdo->exec("ALTER TABLE tournaments ADD COLUMN pincode VARCHAR(10) DEFAULT NULL");
+
     $mCols = $pdo->query("SHOW COLUMNS FROM matches")->fetchAll(PDO::FETCH_COLUMN);
     try { $pdo->exec("ALTER TABLE matches MODIFY COLUMN team_b_id INT NULL DEFAULT NULL"); } catch (Throwable $e) {}
     try { $pdo->exec("ALTER TABLE matches MODIFY COLUMN toss_winner_team_id INT NULL DEFAULT NULL"); } catch (Throwable $e) {}
@@ -298,6 +305,14 @@ try {
     if (!in_array('invite_status', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN invite_status VARCHAR(30) DEFAULT 'accepted'");
     if (!in_array('youtube_live_url', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN youtube_live_url VARCHAR(255) DEFAULT NULL");
     if (!in_array('is_stream_active', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN is_stream_active TINYINT(1) DEFAULT 0");
+    if (!in_array('state', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN state VARCHAR(100) NOT NULL DEFAULT 'Tamil Nadu'");
+    if (!in_array('district', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN district VARCHAR(100) NOT NULL DEFAULT 'Coimbatore'");
+    if (!in_array('city_area', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN city_area VARCHAR(150) DEFAULT NULL");
+    if (!in_array('pincode', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN pincode VARCHAR(10) DEFAULT NULL");
+
+    $uCols = $pdo->query("SHOW COLUMNS FROM app_users")->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array('state', $uCols)) $pdo->exec("ALTER TABLE app_users ADD COLUMN state VARCHAR(100) DEFAULT 'Tamil Nadu'");
+    if (!in_array('district', $uCols)) $pdo->exec("ALTER TABLE app_users ADD COLUMN district VARCHAR(100) DEFAULT 'Coimbatore'");
 
     $bCols = $pdo->query("SHOW COLUMNS FROM ball_events")->fetchAll(PDO::FETCH_COLUMN);
     if (!in_array('is_free_hit', $bCols)) $pdo->exec("ALTER TABLE ball_events ADD COLUMN is_free_hit TINYINT(1) DEFAULT 0");

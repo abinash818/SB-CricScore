@@ -43,6 +43,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['_action'])) {
 
   $cols = table_columns($pdo, 'tournaments');
 
+  $state = trim((string)($_POST['state'] ?? 'Tamil Nadu'));
+  $district = trim((string)($_POST['district'] ?? 'Coimbatore'));
+  $city_area = trim((string)($_POST['city_area'] ?? ''));
+  $venue_ground = trim((string)($_POST['venue_ground'] ?? ($_POST['venue_name'] ?? '')));
+  $pincode = trim((string)($_POST['pincode'] ?? ''));
+
   $data = [
     'name' => $name,
     'type' => $type,
@@ -52,6 +58,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['_action'])) {
     'loss_points' => $loss,
     'default_overs' => $defOvers,
     'default_wickets' => $defWickets,
+    'state' => $state,
+    'district' => $district,
+    'city_area' => $city_area ?: null,
+    'venue_ground' => $venue_ground ?: null,
+    'pincode' => $pincode ?: null,
   ];
 
   $insCols = [];

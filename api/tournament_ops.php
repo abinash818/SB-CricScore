@@ -21,13 +21,27 @@ $action = $_GET['action'] ?? ($_POST['action'] ?? 'list');
 
 // ── 1. LIST TOURNAMENTS ──────────────────────────────────────────────────────
 if ($action === 'list') {
-    $search = trim($_GET['q'] ?? '');
+    $search   = trim($_GET['q'] ?? '');
+    $district = trim($_GET['district'] ?? '');
+    $state    = trim($_GET['state'] ?? '');
     $where = [];
     $params = [];
 
     if (!empty($search)) {
-        $where[] = "LOWER(name) LIKE ?";
-        $params[] = '%' . strtolower($search) . '%';
+        $where[] = "(LOWER(name) LIKE ? OR LOWER(city_area) LIKE ? OR LOWER(venue_ground) LIKE ?)";
+        $sTerm = '%' . strtolower($search) . '%';
+        $params[] = $sTerm;
+        $params[] = $sTerm;
+        $params[] = $sTerm;
+    }
+
+    if (!empty($district) && strtolower($district) !== 'all tn' && strtolower($district) !== 'all') {
+        $where[] = "(district = ? OR state = ?)";
+        $params[] = $district;
+        $params[] = $district;
+    } else if (!empty($state) && strtolower($state) !== 'all') {
+        $where[] = "state = ?";
+        $params[] = $state;
     }
 
     $sql = "SELECT t.*, 

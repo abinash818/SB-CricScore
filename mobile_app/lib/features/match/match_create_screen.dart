@@ -6,7 +6,9 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/api_service.dart';
+import '../../core/location_service.dart';
 import '../../core/theme.dart';
+import '../location/location_picker_dialog.dart';
 import '../team/team_create_screen.dart';
 import 'toss_screen.dart';
 import 'qr_match_scanner_screen.dart';
@@ -24,8 +26,12 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
   final _formKey = GlobalKey<FormState>();
 
   final TextEditingController _venueController = TextEditingController(text: 'Marina Cricket Ground');
+  final TextEditingController _cityAreaController = TextEditingController();
   final TextEditingController _oversController = TextEditingController(text: '10');
   final TextEditingController _wicketsController = TextEditingController(text: '10');
+
+  String _selectedDistrict = LocationService().currentDistrict;
+  String _selectedState = LocationService().currentState;
 
   List<dynamic> _teams = [];
   List<dynamic> _hostEligibleTeams = [];
@@ -468,6 +474,9 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
         'overs_limit': int.tryParse(_oversController.text) ?? 10,
         'wickets_limit': int.tryParse(_wicketsController.text) ?? 10,
         'venue_name': _venueController.text.trim(),
+        'district': _selectedDistrict,
+        'state': _selectedState,
+        'city_area': _cityAreaController.text.trim(),
         'ball_type': _ballType,
         'match_date': dateStr,
         'match_time': timeStr,
@@ -934,13 +943,76 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                     // ── Ground & Ball Type ──
                     Text('Ground & Ball Details', style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.primaryGold)),
                     const SizedBox(height: 10),
+
+                    // Location / District Picker
+                    InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () async {
+                        final res = await LocationPickerDialog.show(
+                          context,
+                          currentDistrict: _selectedDistrict,
+                          currentState: _selectedState,
+                        );
+                        if (res != null) {
+                          setState(() {
+                            _selectedDistrict = res.district;
+                            _selectedState = res.state;
+                          });
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.cardBg,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.primaryGold.withValues(alpha: 0.4)),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primaryGold.withValues(alpha: 0.15),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.location_on, color: AppTheme.primaryGold, size: 18),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('District / Region *', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                                  Text(
+                                    '$_selectedDistrict, $_selectedState',
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppTheme.primaryGold),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.keyboard_arrow_down, color: AppTheme.primaryGold),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
                     TextFormField(
                       controller: _venueController,
                       decoration: const InputDecoration(
                         labelText: 'Ground / Venue Name *',
-                        prefixIcon: Icon(Icons.location_on, color: AppTheme.primaryGold),
+                        prefixIcon: Icon(Icons.sports_cricket, color: AppTheme.primaryGold),
                       ),
                       validator: (val) => val == null || val.isEmpty ? 'Venue name required' : null,
+                    ),
+                    const SizedBox(height: 12),
+
+                    TextFormField(
+                      controller: _cityAreaController,
+                      decoration: const InputDecoration(
+                        labelText: 'Area / Town / Locality (Optional)',
+                        prefixIcon: Icon(Icons.map, color: AppTheme.primaryGold),
+                      ),
                     ),
                     const SizedBox(height: 12),
 

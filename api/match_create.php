@@ -150,6 +150,10 @@ try {
         'ball_type'           => ($ball_type ?: 'tennis_light'),
         'invite_status'       => $invite_st,
         'youtube_live_url'    => ($youtube_url ?: null),
+        'state'               => trim($input['state'] ?? 'Tamil Nadu'),
+        'district'            => trim($input['district'] ?? 'Coimbatore'),
+        'city_area'           => trim($input['city_area'] ?? ($venue_name ?: null)),
+        'pincode'             => trim($input['pincode'] ?? null),
     ];
 
     $fields = [];

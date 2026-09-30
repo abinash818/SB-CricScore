@@ -1,11 +1,8 @@
 <?php
 // api/home_dashboard.php
-// Aggregates data for Flutter Home Dashboard:
-// - Live Matches
-// - Upcoming Matches
-// - Recent Results
-// - Tournaments List
-// - Featured Banners
+// Aggregates filtered data for Flutter Home Dashboard:
+// - Filter by "my_matches", "district", or "all"
+// - Location-aware filtering for Tournaments, Friendly Matches, and Live Scorer Feeds.
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
@@ -17,8 +14,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/app_auth.php';
 
-// Optional auth — works for guests and logged in app users
+// Optional auth
 $currentUser = app_optional_auth($pdo);
+
+$filter   = trim($_GET['filter'] ?? 'my_matches'); // 'my_matches', 'district', 'all'
+$district = trim($_GET['district'] ?? ($currentUser['district'] ?? $currentUser['city'] ?? 'Coimbatore'));
+$state    = trim($_GET['state'] ?? ($currentUser['state'] ?? 'Tamil Nadu'));
+$phone    = trim($_GET['phone'] ?? ($currentUser['mobile'] ?? ''));
+
+// 1. Identify User's Teams for "My Matches"
+$myTeamIds = [];
+if (!empty($phone)) {
+    $cleanPhone = substr(preg_replace('/[^0-9]/', '', $phone), -10);
+    if (!empty($cleanPhone)) {
+        // Player / Captain in teams
+        $pStmt = $pdo->prepare("SELECT DISTINCT team_id FROM players WHERE mobile LIKE ?");
+        $pStmt->execute(["%$cleanPhone%"]);
+        while ($r = $pStmt->fetch(PDO::FETCH_ASSOC)) {
+            $myTeamIds[] = (int)$r['team_id'];
+        }
+    }
+}
+if ($currentUser && !empty($currentUser['id'])) {
+    $tOwn = $pdo->prepare("SELECT id FROM teams WHERE owner_id = ?");
+    $tOwn->execute([(int)$currentUser['id']]);
+    while ($r = $tOwn->fetch(PDO::FETCH_ASSOC)) {
+        $myTeamIds[] = (int)$r['id'];
+    }
+}
+$myTeamIds = array_values(array_unique(array_filter($myTeamIds)));
 
 // Helper function to format match detail with team names and current scores
 function formatMatchSummary(PDO $pdo, array $m): array {
@@ -27,18 +51,18 @@ function formatMatchSummary(PDO $pdo, array $m): array {
     // Fetch Team A & Team B details
     $teamAStmt = $pdo->prepare("SELECT id, name, short_name, icon FROM teams WHERE id = ?");
     $teamAStmt->execute([(int)$m['team_a_id']]);
-    $teamA = $teamAStmt->fetch() ?: ['id' => $m['team_a_id'], 'name' => 'Team A', 'short_name' => 'TMA'];
+    $teamA = $teamAStmt->fetch(PDO::FETCH_ASSOC) ?: ['id' => $m['team_a_id'], 'name' => 'Team A', 'short_name' => 'TMA'];
 
     $teamBStmt = $pdo->prepare("SELECT id, name, short_name, icon FROM teams WHERE id = ?");
     $teamBStmt->execute([(int)$m['team_b_id']]);
-    $teamB = $teamBStmt->fetch() ?: ['id' => $m['team_b_id'], 'name' => 'Team B', 'short_name' => 'TMB'];
+    $teamB = $teamBStmt->fetch(PDO::FETCH_ASSOC) ?: ['id' => $m['team_b_id'], 'name' => 'Team B', 'short_name' => 'TMB'];
 
     // Fetch Tournament Name
     $tournName = 'Friendly Match';
     if (!empty($m['tournament_id'])) {
         $tStmt = $pdo->prepare("SELECT name FROM tournaments WHERE id = ?");
         $tStmt->execute([(int)$m['tournament_id']]);
-        $tRow = $tStmt->fetch();
+        $tRow = $tStmt->fetch(PDO::FETCH_ASSOC);
         if ($tRow) $tournName = $tRow['name'];
     }
 
@@ -53,7 +77,7 @@ function formatMatchSummary(PDO $pdo, array $m): array {
         ORDER BY i.innings_no ASC
     ");
     $innStmt->execute([$matchId]);
-    $inningsList = $innStmt->fetchAll();
+    $inningsList = $innStmt->fetchAll(PDO::FETCH_ASSOC);
 
     $scores = [];
     foreach ($inningsList as $inn) {
@@ -85,84 +109,142 @@ function formatMatchSummary(PDO $pdo, array $m): array {
     }
 
     return [
-        'id'            => $matchId,
+        'id'              => $matchId,
+        'tournament_id'   => $m['tournament_id'] ? (int)$m['tournament_id'] : null,
         'tournament_name' => $tournName,
-        'status'        => $m['status'], // 'scheduled', 'live', 'completed'
-        'overs_limit'   => (int)$m['overs_limit'],
-        'team_a'        => $teamA,
-        'team_b'        => $teamB,
-        'toss_winner_id'=> $m['toss_winner_team_id'] ? (int)$m['toss_winner_team_id'] : null,
-        'toss_decision' => $m['toss_decision'] ?? null,
-        'winner_id'      => $m['winner_team_id'] ? (int)$m['winner_team_id'] : null,
-        'winner_name'   => $winnerName,
-        'result_type'   => $m['result_type'] ?? null,
-        'scores'        => $scores,
-        'created_at'    => $m['created_at'] ?? null,
+        'status'          => $m['status'], // 'scheduled', 'live', 'completed'
+        'overs_limit'     => (int)$m['overs_limit'],
+        'team_a'          => $teamA,
+        'team_b'          => $teamB,
+        'toss_winner_id'  => $m['toss_winner_team_id'] ? (int)$m['toss_winner_team_id'] : null,
+        'toss_decision'   => $m['toss_decision'] ?? null,
+        'winner_id'       => $m['winner_team_id'] ? (int)$m['winner_team_id'] : null,
+        'winner_name'     => $winnerName,
+        'result_type'     => $m['result_type'] ?? null,
+        'state'           => $m['state'] ?? 'Tamil Nadu',
+        'district'        => $m['district'] ?? 'Coimbatore',
+        'city_area'       => $m['city_area'] ?? null,
+        'venue_name'      => $m['venue_name'] ?? null,
+        'match_code'      => $m['match_code'] ?? null,
+        'scores'          => $scores,
+        'created_at'      => $m['created_at'] ?? null,
     ];
 }
 
+// Function to build query with filter
+function getMatchesByFilter(PDO $pdo, string $statusClause, string $filter, string $district, string $state, array $myTeamIds, int $limit = 10): array {
+    $where = [$statusClause];
+    $params = [];
+
+    if ($filter === 'my_matches') {
+        if (!empty($myTeamIds)) {
+            $inPlaceholders = implode(',', array_fill(0, count($myTeamIds), '?'));
+            $where[] = "(team_a_id IN ($inPlaceholders) OR team_b_id IN ($inPlaceholders))";
+            $params = array_merge($params, $myTeamIds, $myTeamIds);
+        } else {
+            // No teams yet for this user
+            return [];
+        }
+    } else if ($filter === 'district' && !empty($district)) {
+        $where[] = "(district = ? OR (tournament_id IN (SELECT id FROM tournaments WHERE district = ?)))";
+        $params[] = $district;
+        $params[] = $district;
+    }
+
+    $whereSql = implode(' AND ', $where);
+    $orderSql = (strpos($statusClause, 'completed') !== false) ? 'ORDER BY id DESC' : 'ORDER BY id DESC';
+    $stmt = $pdo->prepare("SELECT * FROM matches WHERE $whereSql $orderSql LIMIT $limit");
+    $stmt->execute($params);
+    $raw = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $out = [];
+    foreach ($raw as $m) {
+        $out[] = formatMatchSummary($pdo, $m);
+    }
+    return $out;
+}
+
 // 1. Live Matches
-$liveStmt = $pdo->query("SELECT * FROM matches WHERE status IN ('live', 'in_progress') ORDER BY id DESC LIMIT 5");
-$rawLive  = $liveStmt->fetchAll();
-$liveMatches = [];
-foreach ($rawLive as $m) {
-    $liveMatches[] = formatMatchSummary($pdo, $m);
+$liveMatches = getMatchesByFilter($pdo, "status IN ('live', 'in_progress')", $filter, $district, $state, $myTeamIds, 10);
+
+// Fallback: If "my_matches" filter returned empty, also provide general district live matches as recommendation
+$districtLiveMatches = [];
+if ($filter === 'my_matches' && empty($liveMatches) && !empty($district)) {
+    $districtLiveMatches = getMatchesByFilter($pdo, "status IN ('live', 'in_progress')", 'district', $district, $state, [], 5);
 }
 
 // 2. Upcoming Matches
-$upStmt = $pdo->query("SELECT * FROM matches WHERE status IN ('scheduled', 'upcoming') ORDER BY id ASC LIMIT 5");
-$rawUp  = $upStmt->fetchAll();
-$upcomingMatches = [];
-foreach ($rawUp as $m) {
-    $upcomingMatches[] = formatMatchSummary($pdo, $m);
-}
+$upcomingMatches = getMatchesByFilter($pdo, "status IN ('scheduled', 'upcoming')", $filter, $district, $state, $myTeamIds, 10);
 
 // 3. Recent Results
-$recStmt = $pdo->query("SELECT * FROM matches WHERE status IN ('completed', 'finished') ORDER BY id DESC LIMIT 5");
-$rawRec  = $recStmt->fetchAll();
-$recentResults = [];
-foreach ($rawRec as $m) {
-    $recentResults[] = formatMatchSummary($pdo, $m);
-}
+$recentResults = getMatchesByFilter($pdo, "status IN ('completed', 'finished')", $filter, $district, $state, $myTeamIds, 10);
 
-// 4. Active Tournaments
-$tournStmt = $pdo->query("
+// 4. Active Tournaments filtered by District/State
+$tournParams = [];
+$tournWhere = "1=1";
+if ($filter === 'district' && !empty($district)) {
+    $tournWhere = "(district = ? OR state = ?)";
+    $tournParams[] = $district;
+    $tournParams[] = $state;
+}
+$tournStmt = $pdo->prepare("
     SELECT t.*,
            (SELECT COUNT(*) FROM teams tm WHERE tm.tournament_id = t.id) as total_teams,
            (SELECT COUNT(*) FROM matches m WHERE m.tournament_id = t.id) as total_matches
     FROM tournaments t
-    ORDER BY t.id DESC LIMIT 6
+    WHERE $tournWhere
+    ORDER BY t.id DESC LIMIT 8
 ");
-$tournaments = $tournStmt->fetchAll();
+$tournStmt->execute($tournParams);
+$tournaments = $tournStmt->fetchAll(PDO::FETCH_ASSOC);
+
+// If district had no tournaments, fetch global tournaments
+if (empty($tournaments)) {
+    $tournStmt2 = $pdo->query("
+        SELECT t.*,
+               (SELECT COUNT(*) FROM teams tm WHERE tm.tournament_id = t.id) as total_teams,
+               (SELECT COUNT(*) FROM matches m WHERE m.tournament_id = t.id) as total_matches
+        FROM tournaments t
+        ORDER BY t.id DESC LIMIT 6
+    ");
+    $tournaments = $tournStmt2->fetchAll(PDO::FETCH_ASSOC);
+}
 
 // 5. App Banners (Dynamic)
 $banners = [
     [
         'id'          => 1,
-        'title'       => 'SB CricScore Live Tournament',
-        'subtitle'    => 'Register your squad & compete with top teams!',
+        'title'       => 'SB CricScore ' . (!empty($district) ? $district : 'Tamil Nadu') . ' League',
+        'subtitle'    => 'Host turf matches & live stream ball-by-ball!',
         'button_text' => 'Explore Tournaments',
         'image_url'   => 'assets/banner1.png'
     ],
     [
         'id'          => 2,
-        'title'       => 'Ball-by-Ball Live Scoring',
-        'subtitle'    => 'Real-time commentary & instant scorecards',
-        'button_text' => 'Watch Live',
+        'title'       => 'Gully & Turf Live Scorer',
+        'subtitle'    => 'Scan QR code & start 3D Coin Toss immediately!',
+        'button_text' => 'Create Match',
         'image_url'   => 'assets/banner2.png'
     ]
 ];
 
 echo json_encode([
-    'success'          => true,
-    'user'             => $currentUser ? [
-        'id'   => (int)$currentUser['id'],
-        'name' => $currentUser['name'],
-        'city' => $currentUser['city']
+    'success'               => true,
+    'filter'                => $filter,
+    'selected_district'     => $district,
+    'selected_state'        => $state,
+    'my_team_ids_count'     => count($myTeamIds),
+    'user'                  => $currentUser ? [
+        'id'       => (int)$currentUser['id'],
+        'name'     => $currentUser['name'],
+        'city'     => $currentUser['city'] ?? $district,
+        'district' => $currentUser['district'] ?? $district,
+        'state'    => $currentUser['state'] ?? $state,
     ] : null,
-    'live_matches'     => $liveMatches,
-    'upcoming_matches' => $upcomingMatches,
-    'recent_results'   => $recentResults,
-    'tournaments'      => $tournaments,
-    'banners'          => $banners
+    'live_matches'          => $liveMatches,
+    'district_live_fallback'=> $districtLiveMatches,
+    'upcoming_matches'      => $upcomingMatches,
+    'recent_results'        => $recentResults,
+    'tournaments'           => $tournaments,
+    'banners'               => $banners
 ]);

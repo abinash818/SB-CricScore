@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/fcm_service.dart';
+import 'core/location_service.dart';
 import 'core/theme.dart';
 import 'features/splash/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await FcmService().initialize();
+  await LocationService().init();
   runApp(
     const ProviderScope(
       child: SBCricScoreApp(),

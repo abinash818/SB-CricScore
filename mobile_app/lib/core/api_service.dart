@@ -119,10 +119,12 @@ class ApiService {
   }
 
   // ── Tournaments ──
-  Future<Map<String, dynamic>> getTournaments({String? search}) async {
+  Future<Map<String, dynamic>> getTournaments({String? search, String? district, String? state}) async {
     final response = await dio.get('/tournament_ops.php', queryParameters: {
       'action': 'list',
       if (search != null && search.isNotEmpty) 'q': search,
+      if (district != null && district.isNotEmpty) 'district': district,
+      if (state != null && state.isNotEmpty) 'state': state,
     });
     return response.data;
   }
