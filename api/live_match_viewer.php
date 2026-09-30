@@ -130,6 +130,55 @@ if ($target && $m['overs_limit']) {
     $rrr = ($remBalls > 0) ? number_format(($reqRuns / $remBalls) * 6, 2) : "0.00";
 }
 
+// Scorer Permission Check for Logged In App User
+$currentUser = app_optional_auth($pdo);
+$isScorer = false;
+
+$activeScorerId = $m['active_scorer_player_id'] ? (int)$m['active_scorer_player_id'] : null;
+$activeScorerMob = $m['active_scorer_mobile'] ?? '';
+$activeScorerName = $m['active_scorer_name'] ?? '';
+
+if ($currentUser) {
+    $uId = (int)$currentUser['id'];
+    $uMob = trim($currentUser['mobile'] ?? ($currentUser['phone'] ?? ''));
+    $cleanUMob = preg_replace('/\D+/', '', $uMob);
+    $last10U = (strlen($cleanUMob) >= 10) ? substr($cleanUMob, -10) : $cleanUMob;
+
+    if (!empty($activeScorerMob) && !empty($last10U)) {
+        $cleanScorerMob = preg_replace('/\D+/', '', $activeScorerMob);
+        $last10S = (strlen($cleanScorerMob) >= 10) ? substr($cleanScorerMob, -10) : $cleanScorerMob;
+        if ($last10U === $last10S) {
+            $isScorer = true;
+        }
+    }
+
+    if (!$isScorer && $activeScorerId > 0) {
+        $pCheck = $pdo->prepare("SELECT mobile, name FROM players WHERE id = ?");
+        $pCheck->execute([$activeScorerId]);
+        $pRow = $pCheck->fetch(PDO::FETCH_ASSOC);
+        if ($pRow) {
+            $pMob = preg_replace('/\D+/', '', $pRow['mobile'] ?? '');
+            $last10P = (strlen($pMob) >= 10) ? substr($pMob, -10) : $pMob;
+            if (!empty($last10U) && $last10U === $last10P) {
+                $isScorer = true;
+            } else if (!empty($currentUser['name']) && strtolower(trim($currentUser['name'])) === strtolower(trim($pRow['name']))) {
+                $isScorer = true;
+            }
+        }
+    }
+
+    if (!$isScorer && ($activeScorerId === null || $activeScorerId <= 0)) {
+        $tCheck = $pdo->prepare("SELECT owner_id FROM teams WHERE id IN (?, ?)");
+        $tCheck->execute([(int)$m['team_a_id'], (int)$m['team_b_id']]);
+        while ($r = $tCheck->fetch(PDO::FETCH_ASSOC)) {
+            if ((int)($r['owner_id'] ?? 0) === $uId) {
+                $isScorer = true;
+                break;
+            }
+        }
+    }
+}
+
 echo json_encode([
     'success'                  => true,
     'match_id'                 => $match_id,
@@ -141,8 +190,9 @@ echo json_encode([
     'batting_team_id'          => $inn ? (int)$inn['batting_team_id'] : (int)$teamA['id'],
     'bowling_team_id'          => $inn ? (int)$inn['bowling_team_id'] : (int)$teamB['id'],
     'batting_team'             => $inn ? (($inn['batting_team_id'] == $teamA['id']) ? $teamA['name'] : $teamB['name']) : 'TBD',
-    'active_scorer_player_id'  => $m['active_scorer_player_id'] ? (int)$m['active_scorer_player_id'] : null,
-    'active_scorer_name'       => $m['active_scorer_name'] ?? null,
+    'active_scorer_player_id'  => $activeScorerId,
+    'active_scorer_name'       => $activeScorerName,
+    'is_current_user_scorer'   => $isScorer,
     'runs'                     => $runs,
     'wickets'                  => $wickets,
     'overs'                    => $oversFormatted,

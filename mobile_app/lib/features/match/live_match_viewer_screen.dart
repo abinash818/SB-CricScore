@@ -219,6 +219,9 @@ class _LiveMatchViewerScreenState extends State<LiveMatchViewerScreen> {
     final commentary = _matchData?['commentary'] as List? ?? [];
     final matchStatus = _matchData?['status']?.toString() ?? 'scheduled';
 
+    final isCurrentUserScorer = (_matchData?['is_current_user_scorer'] == true);
+    final activeScorerName = _matchData?['active_scorer_name']?.toString();
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -230,8 +233,11 @@ class _LiveMatchViewerScreenState extends State<LiveMatchViewerScreen> {
         actions: [
           if (matchStatus != 'completed')
             IconButton(
-              icon: const Icon(Icons.sports_cricket, color: AppTheme.primaryGold),
-              tooltip: 'Scorekeeper Console / Toss ✍️',
+              icon: Icon(
+                Icons.sports_cricket,
+                color: isCurrentUserScorer ? AppTheme.primaryGold : Colors.white60,
+              ),
+              tooltip: isCurrentUserScorer ? 'Scorekeeper Console ✍️' : 'Live Score Console (View) 👁️',
               onPressed: _openScorerConsoleOrToss,
             ),
           IconButton(
@@ -278,7 +284,7 @@ class _LiveMatchViewerScreenState extends State<LiveMatchViewerScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Scorer / Toss Quick Access Banner
+              // Scorer / Spectator Quick Access Banner
               if (matchStatus != 'completed')
                 GestureDetector(
                   onTap: _openScorerConsoleOrToss,
@@ -288,22 +294,33 @@ class _LiveMatchViewerScreenState extends State<LiveMatchViewerScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [AppTheme.primaryGold.withValues(alpha: 0.25), const Color(0xFF1E1E38)],
+                        colors: isCurrentUserScorer
+                            ? [AppTheme.primaryGold.withValues(alpha: 0.25), const Color(0xFF1E1E38)]
+                            : [const Color(0xFF16162E), const Color(0xFF0F0F1E)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppTheme.primaryGold.withValues(alpha: 0.6), width: 1.2),
+                      border: Border.all(
+                        color: isCurrentUserScorer
+                            ? AppTheme.primaryGold.withValues(alpha: 0.6)
+                            : Colors.white12,
+                        width: isCurrentUserScorer ? 1.4 : 1,
+                      ),
                     ),
                     child: Row(
                       children: [
                         Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: AppTheme.primaryGold,
+                            color: isCurrentUserScorer ? AppTheme.primaryGold : const Color(0xFF1E1E38),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(Icons.sports_cricket, color: Color(0xFF070710), size: 20),
+                          child: Icon(
+                            isCurrentUserScorer ? Icons.sports_cricket : Icons.remove_red_eye,
+                            color: isCurrentUserScorer ? const Color(0xFF070710) : AppTheme.primaryGold,
+                            size: 20,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -311,25 +328,33 @@ class _LiveMatchViewerScreenState extends State<LiveMatchViewerScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                (matchStatus == 'scheduled' || matchStatus == 'pending_toss')
-                                    ? 'Start Match Toss 🪙'
-                                    : 'Live Scoring Console ✍️',
+                                isCurrentUserScorer
+                                    ? ((matchStatus == 'scheduled' || matchStatus == 'pending_toss')
+                                        ? 'Start Match Toss 🪙'
+                                        : 'You are the Active Scorer ✍️')
+                                    : 'Live Match Center 🔴 (Spectator)',
                                 style: GoogleFonts.outfit(
-                                  color: AppTheme.primaryGold,
+                                  color: isCurrentUserScorer ? AppTheme.primaryGold : Colors.white,
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 15,
+                                  fontSize: 14,
                                 ),
                               ),
                               Text(
-                                (matchStatus == 'scheduled' || matchStatus == 'pending_toss')
-                                    ? 'Flip coin & pick batting/bowling to start'
-                                    : 'Tap here to record runs, extras & wickets',
+                                isCurrentUserScorer
+                                    ? 'Tap to record runs, extras & wickets'
+                                    : (activeScorerName != null
+                                        ? 'Scoring by $activeScorerName • Tap to view live console'
+                                        : 'Updates real-time ball-by-ball'),
                                 style: const TextStyle(color: Colors.white70, fontSize: 11),
                               ),
                             ],
                           ),
                         ),
-                        const Icon(Icons.arrow_forward_ios, color: AppTheme.primaryGold, size: 14),
+                        Icon(
+                          Icons.arrow_forward_ios,
+                          color: isCurrentUserScorer ? AppTheme.primaryGold : Colors.white38,
+                          size: 13,
+                        ),
                       ],
                     ),
                   ),
@@ -562,7 +587,7 @@ class _LiveMatchViewerScreenState extends State<LiveMatchViewerScreen> {
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: (matchStatus != 'completed')
+      floatingActionButton: (isCurrentUserScorer && matchStatus != 'completed')
           ? FloatingActionButton.extended(
               backgroundColor: AppTheme.primaryGold,
               foregroundColor: const Color(0xFF070710),
