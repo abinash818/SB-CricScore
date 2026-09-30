@@ -344,7 +344,7 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                   ),
                   const SizedBox(height: 16),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       TextButton(
                         onPressed: () {
@@ -353,11 +353,18 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                         },
                         child: const Text('Go to Home', style: TextStyle(color: AppTheme.textMuted)),
                       ),
-                      if (!isScheduled && _selectedTeamB != null) ...[
-                        const SizedBox(width: 8),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryGold, foregroundColor: const Color(0xFF070710)),
-                          onPressed: () {
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryGold,
+                          foregroundColor: const Color(0xFF070710),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        icon: const Icon(Icons.sports_cricket, size: 18, color: Color(0xFF070710)),
+                        label: const Text('Start Match / Toss 🪙', style: TextStyle(fontWeight: FontWeight.bold)),
+                        onPressed: () async {
+                          // If team B is already selected, go directly to Toss
+                          if (!isScheduled && _selectedTeamB != null && _selectedTeamB! > 0) {
                             Navigator.pop(ctx);
                             Navigator.pushReplacement(
                               context,
@@ -372,10 +379,56 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                                 ),
                               ),
                             );
-                          },
-                          child: const Text('Go to Toss 🪙', style: TextStyle(fontWeight: FontWeight.bold)),
-                        ),
-                      ],
+                            return;
+                          }
+
+                          // If QR invite mode, check if opponent has connected
+                          try {
+                            final res = await _apiService.dio.get('/match_get.php', queryParameters: {'match_id': matchId});
+                            final mData = res.data?['match'];
+                            final int hostId = int.tryParse(mData?['team_a_id']?.toString() ?? '0') ?? _selectedTeamA!;
+                            final int oppId = int.tryParse(mData?['team_b_id']?.toString() ?? '0') ?? 0;
+                            final String oppName = mData?['team_b']?.toString() ?? 'Opponent';
+                            final String hostName = mData?['team_a']?.toString() ?? teamAName;
+                            final int ovs = int.tryParse(mData?['overs_limit']?.toString() ?? '10') ?? 10;
+
+                            if (oppId > 0) {
+                              if (context.mounted) {
+                                Navigator.pop(ctx);
+                                Navigator.pushReplacement(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => TossScreen(
+                                      matchId: matchId,
+                                      teamAId: hostId,
+                                      teamBId: oppId,
+                                      teamAName: hostName,
+                                      teamBName: oppName,
+                                      oversLimit: ovs,
+                                    ),
+                                  ),
+                                );
+                              }
+                            } else {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('⏳ Waiting for Opponent Captain to scan QR (PIN: $matchCode)... Once scanned, tap "Start Match" again!'),
+                                    backgroundColor: Colors.orange,
+                                    duration: const Duration(seconds: 4),
+                                  ),
+                                );
+                              }
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Checking match status: $e'), backgroundColor: AppTheme.errorRed),
+                              );
+                            }
+                          }
+                        },
+                      ),
                     ],
                   ),
                 ],

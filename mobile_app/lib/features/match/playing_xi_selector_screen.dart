@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/api_service.dart';
 import '../../core/theme.dart';
+import 'toss_screen.dart';
+import 'live_scorer_console_screen.dart';
 
 class PlayingXiSelectorScreen extends StatefulWidget {
   final int matchId;
   final int teamId;
   final String teamName;
+  final bool openTossOnSave;
   final VoidCallback? onSaved;
 
   const PlayingXiSelectorScreen({
@@ -14,6 +17,7 @@ class PlayingXiSelectorScreen extends StatefulWidget {
     required this.matchId,
     required this.teamId,
     required this.teamName,
+    this.openTossOnSave = false,
     this.onSaved,
   });
 
@@ -112,7 +116,7 @@ class _PlayingXiSelectorScreenState extends State<PlayingXiSelectorScreen> {
     });
   }
 
-  Future<void> _saveLineup() async {
+  Future<void> _saveLineup({bool autoProceed = false}) async {
     if (_selectedPlayingXI.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select at least 1 player for Playing XI')),
@@ -132,25 +136,96 @@ class _PlayingXiSelectorScreenState extends State<PlayingXiSelectorScreen> {
       );
 
       if (res['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(res['message'] ?? 'Lineup saved successfully!'),
-            backgroundColor: AppTheme.gold,
-          ),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(res['message'] ?? 'Lineup saved successfully! 🏏'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
         widget.onSaved?.call();
-        Navigator.pop(context, true);
+
+        if (widget.openTossOnSave || autoProceed) {
+          await _proceedToMatch();
+        } else {
+          if (mounted) Navigator.pop(context, true);
+        }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(res['message'] ?? 'Failed to save lineup')),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(res['message'] ?? 'Failed to save lineup')),
+          );
+        }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Save error: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Save error: $e')),
+        );
+      }
     } finally {
-      setState(() => _saving = false);
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _proceedToMatch() async {
+    try {
+      final res = await _api.dio.get('/match_get.php', queryParameters: {'match_id': widget.matchId});
+      final mData = res.data?['match'];
+      if (mData != null && mounted) {
+        final int hostId = int.tryParse(mData['team_a_id']?.toString() ?? '0') ?? 0;
+        final int oppId = int.tryParse(mData['team_b_id']?.toString() ?? '0') ?? widget.teamId;
+        final String hostName = mData['team_a']?.toString() ?? 'Host Team';
+        final String oppName = mData['team_b']?.toString() ?? widget.teamName;
+        final int overs = int.tryParse(mData['overs_limit']?.toString() ?? '10') ?? 10;
+        final String status = mData['status']?.toString() ?? 'scheduled';
+
+        if (status == 'live') {
+          final inningsList = res.data?['innings'] as List? ?? [];
+          final activeInn = inningsList.isNotEmpty ? inningsList.last : {};
+          final int innId = int.tryParse(activeInn['id']?.toString() ?? '1') ?? 1;
+          final int batId = int.tryParse(activeInn['batting_team_id']?.toString() ?? '0') ?? hostId;
+          final int bowlId = (batId == hostId) ? oppId : hostId;
+          final String batName = (batId == hostId) ? hostName : oppName;
+          final String bowlName = (batId == hostId) ? oppName : hostName;
+
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+              builder: (_) => LiveScorerConsoleScreen(
+                matchId: widget.matchId,
+                inningsId: innId,
+                battingTeamId: batId,
+                bowlingTeamId: bowlId,
+                battingTeamName: batName,
+                bowlingTeamName: bowlName,
+                oversLimit: overs,
+              ),
+            ),
+            (route) => false,
+          );
+        } else {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+              builder: (_) => TossScreen(
+                matchId: widget.matchId,
+                teamAId: hostId,
+                teamBId: oppId,
+                teamAName: hostName,
+                teamBName: oppName,
+                oversLimit: overs,
+              ),
+            ),
+            (route) => false,
+          );
+        }
+      } else {
+        if (mounted) Navigator.pop(context, true);
+      }
+    } catch (_) {
+      if (mounted) Navigator.pop(context, true);
     }
   }
 
@@ -410,6 +485,32 @@ class _PlayingXiSelectorScreenState extends State<PlayingXiSelectorScreen> {
                 ),
               ],
             ),
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: const BoxDecoration(
+          color: Color(0xFF131326),
+          border: Border(top: BorderSide(color: AppTheme.cardBorder)),
+        ),
+        child: SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primaryGold,
+              foregroundColor: const Color(0xFF070710),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            icon: _saving
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF070710)))
+                : const Icon(Icons.sports_cricket, size: 20, color: Color(0xFF070710)),
+            label: Text(
+              _saving ? 'Saving Lineup...' : 'SAVE & GO TO TOSS / MATCH 🪙',
+              style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 15),
+            ),
+            onPressed: _saving ? null : () => _saveLineup(autoProceed: true),
+          ),
+        ),
+      ),
     );
   }
 }

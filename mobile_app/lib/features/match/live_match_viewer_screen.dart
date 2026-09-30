@@ -7,6 +7,8 @@ import '../../core/api_service.dart';
 import '../../core/theme.dart';
 import 'full_scorecard_screen.dart';
 import 'match_analytics_screen.dart';
+import 'toss_screen.dart';
+import 'live_scorer_console_screen.dart';
 
 class LiveMatchViewerScreen extends StatefulWidget {
   final int matchId;
@@ -145,6 +147,54 @@ class _LiveMatchViewerScreenState extends State<LiveMatchViewerScreen> {
     );
   }
 
+  void _openScorerConsoleOrToss() {
+    final status = _matchData?['status']?.toString() ?? 'scheduled';
+    final teamA = _matchData?['team_a'] ?? {};
+    final teamB = _matchData?['team_b'] ?? {};
+    final int teamAId = int.tryParse(teamA['id']?.toString() ?? '0') ?? 0;
+    final int teamBId = int.tryParse(teamB['id']?.toString() ?? '0') ?? 0;
+    final String teamAName = teamA['name']?.toString() ?? 'Team A';
+    final String teamBName = teamB['name']?.toString() ?? 'Team B';
+    final int oversLimit = int.tryParse(_matchData?['overs_limit']?.toString() ?? '10') ?? 10;
+
+    if (status == 'scheduled' || status == 'pending_toss') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TossScreen(
+            matchId: widget.matchId,
+            teamAId: teamAId,
+            teamBId: teamBId,
+            teamAName: teamAName,
+            teamBName: teamBName,
+            oversLimit: oversLimit,
+          ),
+        ),
+      ).then((_) => _fetchLiveMatch());
+    } else {
+      final int innId = int.tryParse(_matchData?['active_innings_id']?.toString() ?? '1') ?? 1;
+      final int batTeamId = int.tryParse(_matchData?['batting_team_id']?.toString() ?? '0') ?? teamAId;
+      final int bowlTeamId = int.tryParse(_matchData?['bowling_team_id']?.toString() ?? '0') ?? teamBId;
+      final String batTeamName = _matchData?['batting_team']?.toString() ?? teamAName;
+      final String bowlTeamName = (batTeamId == teamAId) ? teamBName : teamAName;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => LiveScorerConsoleScreen(
+            matchId: widget.matchId,
+            inningsId: innId,
+            battingTeamId: batTeamId,
+            bowlingTeamId: bowlTeamId,
+            battingTeamName: batTeamName,
+            bowlingTeamName: bowlTeamName,
+            oversLimit: oversLimit,
+          ),
+        ),
+      ).then((_) => _fetchLiveMatch());
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -166,6 +216,7 @@ class _LiveMatchViewerScreenState extends State<LiveMatchViewerScreen> {
     final remBalls = _matchData?['balls_remaining'] ?? 0;
     final youtubeUrl = (_matchData?['youtube_url'] ?? '').toString();
     final commentary = _matchData?['commentary'] as List? ?? [];
+    final matchStatus = _matchData?['status']?.toString() ?? 'scheduled';
 
     return Scaffold(
       appBar: AppBar(
@@ -176,6 +227,12 @@ class _LiveMatchViewerScreenState extends State<LiveMatchViewerScreen> {
         backgroundColor: AppTheme.background,
         elevation: 0,
         actions: [
+          if (matchStatus != 'completed')
+            IconButton(
+              icon: const Icon(Icons.sports_cricket, color: AppTheme.primaryGold),
+              tooltip: 'Scorekeeper Console / Toss ✍️',
+              onPressed: _openScorerConsoleOrToss,
+            ),
           IconButton(
             icon: const Icon(Icons.share, color: AppTheme.primaryGold),
             tooltip: 'Share Live Scorecard',
@@ -220,6 +277,63 @@ class _LiveMatchViewerScreenState extends State<LiveMatchViewerScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Scorer / Toss Quick Access Banner
+              if (matchStatus != 'completed')
+                GestureDetector(
+                  onTap: _openScorerConsoleOrToss,
+                  child: Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 14),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [AppTheme.primaryGold.withValues(alpha: 0.25), const Color(0xFF1E1E38)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppTheme.primaryGold.withValues(alpha: 0.6), width: 1.2),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryGold,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.sports_cricket, color: Color(0xFF070710), size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                (matchStatus == 'scheduled' || matchStatus == 'pending_toss')
+                                    ? 'Start Match Toss 🪙'
+                                    : 'Live Scoring Console ✍️',
+                                style: GoogleFonts.outfit(
+                                  color: AppTheme.primaryGold,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              Text(
+                                (matchStatus == 'scheduled' || matchStatus == 'pending_toss')
+                                    ? 'Flip coin & pick batting/bowling to start'
+                                    : 'Tap here to record runs, extras & wickets',
+                                style: const TextStyle(color: Colors.white70, fontSize: 11),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.arrow_forward_ios, color: AppTheme.primaryGold, size: 14),
+                      ],
+                    ),
+                  ),
+                ),
+
               // Live Stream Banner (If URL available or option to add)
               Container(
                 width: double.infinity,
