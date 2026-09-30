@@ -223,15 +223,18 @@ class ApiService {
     required String content,
     String postType = 'general',
     String? whatsappNumber,
+    MultipartFile? imageFile,
     String? imagePath,
     List<int>? imageBytes,
     String? imageName,
   }) async {
-    MultipartFile? picFile;
-    if (imageBytes != null && imageBytes.isNotEmpty) {
-      picFile = MultipartFile.fromBytes(imageBytes, filename: imageName ?? 'feed.jpg');
-    } else if (imagePath != null && imagePath.isNotEmpty) {
-      picFile = await MultipartFile.fromFile(imagePath, filename: imageName ?? 'feed.jpg');
+    MultipartFile? picFile = imageFile;
+    if (picFile == null) {
+      if (imageBytes != null && imageBytes.isNotEmpty) {
+        picFile = MultipartFile.fromBytes(imageBytes, filename: imageName ?? 'feed.jpg');
+      } else if (imagePath != null && imagePath.isNotEmpty) {
+        picFile = await MultipartFile.fromFile(imagePath, filename: imageName ?? 'feed.jpg');
+      }
     }
 
     final formData = FormData.fromMap({
@@ -436,46 +439,6 @@ class ApiService {
     });
     return response.data;
   }
-
-  // ── Cricket Community Feed ──
-  Future<Map<String, dynamic>> getFeed({String category = 'all', int page = 1}) async {
-    final response = await dio.get('/feed_ops.php', queryParameters: {
-      'action': 'list',
-      'category': category,
-      'page': page,
-    });
-    return response.data;
-  }
-
-  Future<Map<String, dynamic>> createFeedPost({
-    required String content,
-    String postType = 'general',
-    String? whatsappNumber,
-    MultipartFile? imageFile,
-  }) async {
-    final formData = FormData.fromMap({
-      'action': 'create',
-      'content': content,
-      'post_type': postType,
-      if (whatsappNumber != null && whatsappNumber.isNotEmpty) 'whatsapp_number': whatsappNumber,
-      if (imageFile != null) 'image': imageFile,
-    });
-    final response = await dio.post('/feed_ops.php', data: formData);
-    return response.data;
-  }
-
-  Future<Map<String, dynamic>> toggleFeedLike(int postId) async {
-    final response = await dio.post('/feed_ops.php?action=like', data: {
-      'post_id': postId,
-    });
-    return response.data;
-  }
-
-  Future<Map<String, dynamic>> deleteFeedPost(int postId) async {
-    final response = await dio.post('/feed_ops.php?action=delete', data: {
-      'post_id': postId,
-    });
-    return response.data;
-  }
 }
+
 
