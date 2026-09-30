@@ -656,7 +656,7 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
                         value: pid,
                         child: Text("${p['name']} • ${p['role'] ?? 'BAT'}", style: const TextStyle(color: Colors.white)),
                       );
-                    }).toList>,
+                    }).toList(),
                     onChanged: (val) => setSheetState(() => newBatterId = val),
                   ),
                 const SizedBox(height: 14),
