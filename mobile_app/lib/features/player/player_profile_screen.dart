@@ -685,6 +685,7 @@ class _PlayerProfileScreenState extends State<PlayerProfileScreen> {
                         : null,
                     playerId: widget.playerId,
                     mobile: player['mobile']?.toString() ?? player['phone']?.toString(),
+                    playerName: player['name']?.toString(),
                   ),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {

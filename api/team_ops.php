@@ -370,11 +370,13 @@ if ($action === 'my_teams') {
     $ownerId = (int)($_GET['owner_id'] ?? ($_GET['user_id'] ?? 0));
     $playerId = (int)($_GET['player_id'] ?? 0);
     $mobile = trim($_GET['mobile'] ?? '');
+    $playerName = trim($_GET['player_name'] ?? '');
 
     $currentUser = app_optional_auth($pdo);
     if ($currentUser) {
         if ($ownerId <= 0) $ownerId = (int)$currentUser['id'];
         if (empty($mobile)) $mobile = $currentUser['mobile'] ?? ($currentUser['phone'] ?? '');
+        if (empty($playerName)) $playerName = $currentUser['name'] ?? '';
     }
 
     $whereClauses = [];
@@ -386,13 +388,29 @@ if ($action === 'my_teams') {
         $params[] = $ownerId;
     }
 
-    // 2. Teams where this user's mobile is registered in squad
+    // 2. Teams where this user's mobile is in the squad (flexible normalization: 10 digits, +91, with spaces)
     if (!empty($mobile)) {
-        $whereClauses[] = "t.id IN (SELECT team_id FROM players WHERE mobile = ?)";
-        $params[] = $mobile;
+        $cleanMob = preg_replace('/\D+/', '', $mobile);
+        $last10 = (strlen($cleanMob) >= 10) ? substr($cleanMob, -10) : $cleanMob;
+        if (strlen($last10) >= 7) {
+            $whereClauses[] = "t.id IN (SELECT team_id FROM players WHERE mobile = ? OR mobile = ? OR mobile = ? OR mobile LIKE ?)";
+            $params[] = $mobile;
+            $params[] = '+91' . $last10;
+            $params[] = $last10;
+            $params[] = '%' . $last10;
+        } else {
+            $whereClauses[] = "t.id IN (SELECT team_id FROM players WHERE mobile = ?)";
+            $params[] = $mobile;
+        }
     }
 
-    // 3. Teams where this specific squad player id is registered
+    // 3. Teams where this player's name is registered in squad (if name provided and > 1 char)
+    if (!empty($playerName) && strlen(trim($playerName)) >= 2) {
+        $whereClauses[] = "t.id IN (SELECT team_id FROM players WHERE LOWER(TRIM(name)) = ?)";
+        $params[] = strtolower(trim($playerName));
+    }
+
+    // 4. Teams where this specific squad player id is registered
     if ($playerId > 0) {
         $whereClauses[] = "t.id IN (SELECT team_id FROM players WHERE id = ?)";
         $params[] = $playerId;
@@ -402,7 +420,7 @@ if ($action === 'my_teams') {
     if (!empty($whereClauses)) {
         $whereSql = implode(' OR ', $whereClauses);
         $stmt = $pdo->prepare("
-            SELECT t.*, 
+            SELECT DISTINCT t.*, 
                    (SELECT COUNT(*) FROM players p WHERE p.team_id = t.id) as player_count 
             FROM teams t 
             WHERE {$whereSql} 
@@ -412,6 +430,9 @@ if ($action === 'my_teams') {
         $myTeams = $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    $cleanMob = preg_replace('/\D+/', '', $mobile);
+    $last10 = (strlen($cleanMob) >= 10) ? substr($cleanMob, -10) : $cleanMob;
+
     $sanitizedMyTeams = [];
     foreach ($myTeams as $t) {
         $tId = (int)$t['id'];
@@ -420,19 +441,29 @@ if ($action === 'my_teams') {
 
         if ($isOwner) {
             $userRole = 'leader';
-        } else if (!empty($mobile)) {
-            $chkRole = $pdo->prepare("SELECT is_captain, team_role FROM players WHERE team_id = ? AND mobile = ? LIMIT 1");
-            $chkRole->execute([$tId, $mobile]);
-            $pRole = $chkRole->fetch(PDO::FETCH_ASSOC);
+        } else {
+            // Check player role in squad by mobile or name
+            $pRole = null;
+            if (!empty($last10) && strlen($last10) >= 7) {
+                $chkRole = $pdo->prepare("SELECT is_captain, team_role FROM players WHERE team_id = ? AND (mobile = ? OR mobile = ? OR mobile = ? OR mobile LIKE ?) LIMIT 1");
+                $chkRole->execute([$tId, $mobile, '+91' . $last10, $last10, '%' . $last10]);
+                $pRole = $chkRole->fetch(PDO::FETCH_ASSOC);
+            }
+            if (!$pRole && !empty($playerName)) {
+                $chkRoleName = $pdo->prepare("SELECT is_captain, team_role FROM players WHERE team_id = ? AND LOWER(TRIM(name)) = ? LIMIT 1");
+                $chkRoleName->execute([$tId, strtolower(trim($playerName))]);
+                $pRole = $chkRoleName->fetch(PDO::FETCH_ASSOC);
+            }
+
             if ($pRole) {
                 if ((int)($pRole['is_captain'] ?? 0) === 1 || ($pRole['team_role'] ?? '') === 'leader') {
                     $userRole = 'leader';
                 } else if (($pRole['team_role'] ?? '') === 'co_leader') {
                     $userRole = 'co_leader';
+                } else {
+                    $userRole = 'member';
                 }
             }
-        } else {
-            $userRole = 'leader';
         }
 
         $t['user_role'] = $userRole;
