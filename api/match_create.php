@@ -58,8 +58,13 @@ function get_table_columns_safe(PDO $pdo, string $table): array {
 }
 
 try {
-    // Check and auto-migrate missing columns if necessary
+    // Check and auto-migrate missing columns or constraints if necessary
     $existingCols = get_table_columns_safe($pdo, 'matches');
+
+    // Ensure team_b_id is nullable (to allow creating pending QR matches where Team B joins later)
+    try {
+        $pdo->exec("ALTER TABLE matches MODIFY COLUMN team_b_id INT NULL DEFAULT NULL");
+    } catch (Throwable $e) {}
 
     if (!isset($existingCols['match_date'])) {
         try { $pdo->exec("ALTER TABLE matches ADD COLUMN match_date VARCHAR(30) DEFAULT NULL"); $existingCols['match_date'] = true; } catch (Throwable $e) {}
