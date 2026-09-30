@@ -284,6 +284,9 @@ try {
     if (!in_array('is_captain', $pCols)) $pdo->exec("ALTER TABLE players ADD COLUMN is_captain TINYINT(1) DEFAULT 0");
 
     $mCols = $pdo->query("SHOW COLUMNS FROM matches")->fetchAll(PDO::FETCH_COLUMN);
+    try { $pdo->exec("ALTER TABLE matches MODIFY COLUMN team_b_id INT NULL DEFAULT NULL"); } catch (Throwable $e) {}
+    try { $pdo->exec("ALTER TABLE matches MODIFY COLUMN toss_winner_team_id INT NULL DEFAULT NULL"); } catch (Throwable $e) {}
+    try { $pdo->exec("ALTER TABLE players ADD COLUMN team_role VARCHAR(20) DEFAULT 'member'"); } catch (Throwable $e) {}
     if (!in_array('is_final', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN is_final TINYINT(1) DEFAULT 0");
     if (!in_array('man_of_match_id', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN man_of_match_id INT DEFAULT NULL");
     if (!in_array('match_date', $mCols)) $pdo->exec("ALTER TABLE matches ADD COLUMN match_date VARCHAR(30) DEFAULT NULL");
