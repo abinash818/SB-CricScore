@@ -4,6 +4,7 @@ import '../../core/api_service.dart';
 import '../../core/theme.dart';
 import '../match/live_match_viewer_screen.dart';
 import '../match/match_create_screen.dart';
+import '../match/qr_match_scanner_screen.dart';
 import '../search/global_search_screen.dart';
 import '../notifications/notification_list_screen.dart';
 
@@ -84,6 +85,16 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         elevation: 0,
         actions: [
           IconButton(
+            tooltip: 'Scan Match QR Code',
+            icon: const Icon(Icons.qr_code_scanner, color: AppTheme.primaryGold),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const QrMatchScannerScreen()),
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.search, color: AppTheme.primaryGold),
             onPressed: () {
               Navigator.push(
@@ -111,6 +122,133 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ── Quick Match Actions Bar ──
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    // Start New Match Card
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const MatchCreateScreen()),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                AppTheme.primaryGold.withValues(alpha: 0.2),
+                                AppTheme.cardBg,
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppTheme.primaryGold.withValues(alpha: 0.4)),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.primaryGold,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(Icons.sports_cricket, color: Color(0xFF070710), size: 20),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Start Match',
+                                      style: GoogleFonts.outfit(
+                                        color: AppTheme.primaryGold,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    const Text(
+                                      'Create & Get QR',
+                                      style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+
+                    // Scan Match QR Card
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const QrMatchScannerScreen()),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                const Color(0xFF00E676).withValues(alpha: 0.15),
+                                AppTheme.cardBg,
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFF00E676).withValues(alpha: 0.4)),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF00E676),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(Icons.qr_code_scanner, color: Color(0xFF070710), size: 20),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Scan Match QR',
+                                      style: GoogleFonts.outfit(
+                                        color: const Color(0xFF00E676),
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    const Text(
+                                      'Join as Opponent',
+                                      style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
               // 🔴 Live Matches Section
               if (liveMatches.isNotEmpty) ...[
                 _sectionTitle('🔴 LIVE MATCHES'),

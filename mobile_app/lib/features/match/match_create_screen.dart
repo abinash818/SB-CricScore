@@ -6,6 +6,7 @@ import '../../core/api_service.dart';
 import '../../core/theme.dart';
 import 'playing_xi_selector_screen.dart';
 import 'toss_screen.dart';
+import 'qr_match_scanner_screen.dart';
 
 class MatchCreateScreen extends StatefulWidget {
   final int? tournamentId;
@@ -22,7 +23,6 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
   final TextEditingController _venueController = TextEditingController(text: 'Marina Cricket Ground');
   final TextEditingController _oversController = TextEditingController(text: '10');
   final TextEditingController _wicketsController = TextEditingController(text: '10');
-  final TextEditingController _joinCodeController = TextEditingController();
 
   List<dynamic> _teams = [];
   bool _isLoading = true;
@@ -82,88 +82,6 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
     } catch (_) {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  void _showJoinMatchModal() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF0F0F1E),
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        int? joinTeamId;
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-            left: 20,
-            right: 20,
-            top: 20,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Join Match via Code / QR 🔗',
-                style: GoogleFonts.outfit(color: AppTheme.gold, fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _joinCodeController,
-                decoration: const InputDecoration(
-                  labelText: 'Enter 6-Digit Match Code (e.g. SB8921)',
-                  prefixIcon: Icon(Icons.qr_code, color: AppTheme.gold),
-                ),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<int>(
-                decoration: const InputDecoration(
-                  labelText: 'Select Your Team',
-                  prefixIcon: Icon(Icons.shield, color: AppTheme.gold),
-                ),
-                items: _teams.map<DropdownMenuItem<int>>((t) {
-                  return DropdownMenuItem<int>(
-                    value: t['id'],
-                    child: Text(t['name']),
-                  );
-                }).toList(),
-                onChanged: (val) => joinTeamId = val,
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: AppTheme.gold, foregroundColor: Colors.black),
-                  onPressed: () async {
-                    final code = _joinCodeController.text.trim();
-                    if (code.isEmpty || joinTeamId == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Please enter Match Code and select Team')),
-                      );
-                      return;
-                    }
-                    Navigator.pop(ctx);
-                    final res = await _apiService.joinMatchQR(teamId: joinTeamId!, matchCode: code);
-                    if (res['success'] == true) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(res['message'] ?? 'Match Joined!'), backgroundColor: Colors.green),
-                      );
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(res['message'] ?? 'Failed to join'), backgroundColor: Colors.redAccent),
-                      );
-                    }
-                  },
-                  child: const Text('Confirm & Join Match', style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
   }
 
   void _showMatchCreatedDialog({
@@ -369,9 +287,14 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
         elevation: 0,
         actions: [
           IconButton(
-            tooltip: 'Join Match via Code / QR',
+            tooltip: 'Scan Match QR Code',
             icon: const Icon(Icons.qr_code_scanner, color: AppTheme.gold),
-            onPressed: _showJoinMatchModal,
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const QrMatchScannerScreen()),
+              );
+            },
           ),
         ],
       ),
@@ -384,6 +307,58 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // ── Opponent QR Scan Banner ──
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const QrMatchScannerScreen()),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        margin: const EdgeInsets.only(bottom: 20),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF00E676).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFF00E676).withValues(alpha: 0.4)),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF00E676),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.qr_code_scanner, color: Color(0xFF070710), size: 20),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Opponent Team Captain? 📷',
+                                    style: GoogleFonts.outfit(
+                                      color: const Color(0xFF00E676),
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  const Text(
+                                    'Tap here to scan Host QR or enter PIN to join',
+                                    style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.arrow_forward_ios, color: Color(0xFF00E676), size: 14),
+                          ],
+                        ),
+                      ),
+                    ),
+
                     // Teams Selector
                     Text('Select Teams', style: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
                     const SizedBox(height: 12),
