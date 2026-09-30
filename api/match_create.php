@@ -135,7 +135,7 @@ try {
     $insertData = [
         'tournament_id'       => ($tid > 0 ? $tid : null),
         'team_a_id'           => $team_a,
-        'team_b_id'           => ($team_b > 0 ? $team_b : null),
+        'team_b_id'           => ($team_b > 0 ? $team_b : 0),
         'toss_winner_team_id' => $toss_winner,
         'toss_decision'       => $toss_dec,
         'overs_limit'         => $overs,
