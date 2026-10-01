@@ -15,7 +15,17 @@ import 'qr_match_scanner_screen.dart';
 
 class MatchCreateScreen extends StatefulWidget {
   final int? tournamentId;
-  const MatchCreateScreen({super.key, this.tournamentId});
+  final int? initialTeamAId;
+  final int? initialTeamBId;
+  final String? initialTeamBName;
+
+  const MatchCreateScreen({
+    super.key,
+    this.tournamentId,
+    this.initialTeamAId,
+    this.initialTeamBId,
+    this.initialTeamBName,
+  });
 
   @override
   State<MatchCreateScreen> createState() => _MatchCreateScreenState();
@@ -44,7 +54,9 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
   TimeOfDay _selectedTime = TimeOfDay.now();
 
   int? _selectedTeamA;
-  int? _selectedTeamB; // Can be null for open QR invite!
+  int? _selectedTeamB; // Pre-selected opponent or null for open QR invite
+  String? _selectedTeamBName;
+  bool _useQrInviteMode = false;
   String _ballType = 'tennis_light';
   List<int> _hostPlayingXiIds = [];
 
@@ -96,8 +108,16 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
           _teams = teamMap.values.toList();
 
           // Auto-select user's own team for Team A if available
-          if (_hostEligibleTeams.isNotEmpty && _selectedTeamA == null) {
+          if (widget.initialTeamAId != null) {
+            _selectedTeamA = widget.initialTeamAId;
+          } else if (_hostEligibleTeams.isNotEmpty && _selectedTeamA == null) {
             _selectedTeamA = int.parse(_hostEligibleTeams.first['id'].toString());
+          }
+
+          if (widget.initialTeamBId != null) {
+            _selectedTeamB = widget.initialTeamBId;
+            _selectedTeamBName = widget.initialTeamBName;
+            _useQrInviteMode = false;
           }
 
           _isLoading = false;
@@ -894,50 +914,111 @@ class _MatchCreateScreenState extends State<MatchCreateScreen> {
                     ] else
                       const SizedBox(height: 12),
 
-                    // Opponent Team (Strict QR Scan / PIN Invite Only - No public team list)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF0D1B14),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFF00E676).withValues(alpha: 0.4), width: 1.2),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF00E676).withValues(alpha: 0.15),
-                              shape: BoxShape.circle,
+                    // Opponent Team Section (Direct Opponent Selection or QR Invite)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Opponent Team (Team B)', style: GoogleFonts.outfit(fontSize: 15, fontWeight: FontWeight.bold, color: AppTheme.primaryGold)),
+                        Row(
+                          children: [
+                            ChoiceChip(
+                              label: const Text('⚔️ Select Team', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                              selected: !_useQrInviteMode,
+                              selectedColor: AppTheme.primaryGold,
+                              labelStyle: TextStyle(color: !_useQrInviteMode ? const Color(0xFF070710) : Colors.white70),
+                              onSelected: (val) => setState(() => _useQrInviteMode = false),
                             ),
-                            child: const Icon(Icons.qr_code_scanner, color: Color(0xFF00E676), size: 22),
-                          ),
-                          const SizedBox(width: 12),
-                          const Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            const SizedBox(width: 6),
+                            ChoiceChip(
+                              label: const Text('📷 QR Invite', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                              selected: _useQrInviteMode,
+                              selectedColor: const Color(0xFF00E676),
+                              labelStyle: TextStyle(color: _useQrInviteMode ? const Color(0xFF070710) : Colors.white70),
+                              onSelected: (val) => setState(() {
+                                _useQrInviteMode = true;
+                                _selectedTeamB = null;
+                              }),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    if (_useQrInviteMode)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0D1B14),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFF00E676).withValues(alpha: 0.4), width: 1.2),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF00E676).withValues(alpha: 0.15),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.qr_code_scanner, color: Color(0xFF00E676), size: 22),
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        'QR / PIN Invite Mode',
+                                        style: TextStyle(color: Color(0xFF00E676), fontWeight: FontWeight.bold, fontSize: 13),
+                                      ),
+                                      SizedBox(width: 6),
+                                      Text('• Match PIN 🔒', style: TextStyle(color: Colors.white60, fontSize: 11)),
+                                    ],
+                                  ),
+                                  SizedBox(height: 3),
+                                  Text(
+                                    'A Match PIN & QR Code will be generated for Opponent Captain to scan & join instantly.',
+                                    style: TextStyle(color: Colors.white70, fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      DropdownButtonFormField<int>(
+                        isExpanded: true,
+                        value: _selectedTeamB,
+                        decoration: const InputDecoration(
+                          labelText: 'Select Opponent Team *',
+                          prefixIcon: Icon(Icons.sports_cricket, color: Color(0xFF00E676)),
+                        ),
+                        items: _teams
+                            .where((t) => int.parse(t['id'].toString()) != _selectedTeamA)
+                            .map<DropdownMenuItem<int>>((t) {
+                          return DropdownMenuItem<int>(
+                            value: int.parse(t['id'].toString()),
+                            child: Row(
                               children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      'Opponent Team (Team B)',
-                                      style: TextStyle(color: Color(0xFF00E676), fontWeight: FontWeight.bold, fontSize: 13),
-                                    ),
-                                    SizedBox(width: 6),
-                                    Text('• QR Invite Only 🔒', style: TextStyle(color: Colors.white60, fontSize: 11)),
-                                  ],
-                                ),
-                                SizedBox(height: 3),
-                                Text(
-                                  'Opponent Captain will scan Match QR or enter PIN to connect their squad.',
-                                  style: TextStyle(color: Colors.white70, fontSize: 11),
+                                const Icon(Icons.shield_outlined, size: 16, color: Color(0xFF00E676)),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    "${t['name']} (${t['city'] ?? 'Tamil Nadu'})",
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                                  ),
                                 ),
                               ],
                             ),
-                          ),
-                        ],
+                          );
+                        }).toList(),
+                        onChanged: (val) => setState(() => _selectedTeamB = val),
                       ),
-                    ),
                     const SizedBox(height: 20),
 
                     // ── Ground & Ball Type ──

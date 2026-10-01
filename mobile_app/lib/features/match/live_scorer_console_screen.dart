@@ -352,14 +352,13 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
           final int overs = res.data['overs_limit'] != null
               ? (int.tryParse(res.data['overs_limit'].toString()) ?? widget.oversLimit)
               : widget.oversLimit;
-          final int matchMaxBalls = overs * 6;
-          final bool isInnComplete = (res.data['is_innings_complete'] == true) ||
-              (_legalBalls >= matchMaxBalls) ||
+          final int matchMaxBalls = (overs > 0 ? overs : 20) * 6;
+          final bool isInnComplete = (_legalBalls >= matchMaxBalls && matchMaxBalls > 0) ||
               (_totalWickets >= 10);
-          final bool isMatchOver = (res.data['is_match_ended'] == true) ||
+          final bool isMatchOver = (res.data['is_match_ended'] == true && _currentInningsNo == 2) ||
               (_currentInningsNo == 2 &&
                   ((_targetRuns != null && _totalRuns >= _targetRuns!) ||
-                      _legalBalls >= matchMaxBalls ||
+                      (_legalBalls >= matchMaxBalls && matchMaxBalls > 0) ||
                       _totalWickets >= 10));
 
           if (_currentInningsNo == 1 && isInnComplete && !_isInningsBreakOpen) {
@@ -372,8 +371,8 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
             // Wicket Fall -> Prompt Next Batsman
             if (outPlayerId != null) _dismissedPlayerIds.add(outPlayerId);
             _showSelectNewBatsmanSheet(isNonStrikerOut: outIsNonStriker);
-          } else if (isOverFinished) {
-            // Over Complete -> Prompt Next Bowler
+          } else if (isOverFinished && !isInnComplete) {
+            // Over Complete -> Prompt ONLY Next Bowler
             _showSelectNextBowlerSheet();
           }
         }
@@ -1088,6 +1087,101 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
     );
   }
 
+  // ── CHANGE ACTIVE BATSMAN (Striker or Non-Striker) ──
+  void _showChangeBatsmanSheet({required bool isStriker}) {
+    int? selectedBatterId = isStriker ? _strikerId : _nonStrikerId;
+    final otherBatterId = isStriker ? _nonStrikerId : _strikerId;
+
+    final availableBatsmen = _battingSquad.where((p) {
+      final pid = int.parse(p['id'].toString());
+      return !_dismissedPlayerIds.contains(pid) && pid != otherBatterId;
+    }).toList();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF0F0F1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          return Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.edit, color: AppTheme.primaryGold, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      isStriker ? 'Change Striker (On Strike) 🏏*' : 'Change Non-Striker 🏏',
+                      style: GoogleFonts.outfit(color: AppTheme.primaryGold, fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Current: ${isStriker ? _strikerName : _nonStrikerName}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+                const SizedBox(height: 14),
+                DropdownButtonFormField<int>(
+                  isExpanded: true,
+                  value: selectedBatterId,
+                  dropdownColor: const Color(0xFF131326),
+                  hint: const Text('Select Batsman from squad', style: TextStyle(color: Colors.white60)),
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.sports_cricket, color: AppTheme.primaryGold),
+                  ),
+                  items: availableBatsmen.map<DropdownMenuItem<int>>((p) {
+                    final pid = int.parse(p['id'].toString());
+                    return DropdownMenuItem<int>(
+                      value: pid,
+                      child: Text("${p['name']} • ${p['role'] ?? 'BAT'}", style: const TextStyle(color: Colors.white)),
+                    );
+                  }).toList(),
+                  onChanged: (val) => setSheetState(() => selectedBatterId = val),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.primaryGold,
+                      foregroundColor: const Color(0xFF070710),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () {
+                      if (selectedBatterId == null) {
+                        Navigator.pop(ctx);
+                        return;
+                      }
+                      final sel = _battingSquad.firstWhere((p) => int.parse(p['id'].toString()) == selectedBatterId);
+                      Navigator.pop(ctx);
+                      setState(() {
+                        if (isStriker) {
+                          _strikerId = selectedBatterId;
+                          _strikerName = sel['name'] ?? 'Striker';
+                        } else {
+                          _nonStrikerId = selectedBatterId;
+                          _nonStrikerName = sel['name'] ?? 'Non-Striker';
+                        }
+                      });
+                    },
+                    child: const Text('UPDATE BATSMAN 🏏', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   // ── INNINGS BREAK MODAL ──
   void _showInningsBreakModal() async {
     final int target = _totalRuns + 1;
@@ -1763,45 +1857,51 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
                     children: [
                       // Striker Box
                       Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF00E676).withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: const Color(0xFF00E676), width: 1.2),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Text('🏏*', style: TextStyle(color: Color(0xFF00E676), fontWeight: FontWeight.bold, fontSize: 13)),
-                                  const SizedBox(width: 4),
-                                  Expanded(
-                                    child: Text(
-                                      _strikerName,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(color: Color(0xFF00E676), fontWeight: FontWeight.bold, fontSize: 13),
+                        child: InkWell(
+                          onTap: _isDesignatedScorer ? () => _showChangeBatsmanSheet(isStriker: true) : null,
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF00E676).withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFF00E676), width: 1.2),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Text('🏏*', style: TextStyle(color: Color(0xFF00E676), fontWeight: FontWeight.bold, fontSize: 13)),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        _strikerName,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(color: Color(0xFF00E676), fontWeight: FontWeight.bold, fontSize: 13),
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                '$_strikerRuns (${_strikerBalls}b) • 4s:$_strikerFours 6s:$_strikerSixes',
-                                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
-                              ),
-                              Text(
-                                'SR: ${strikerSR.toStringAsFixed(1)}',
-                                style: const TextStyle(color: Colors.white60, fontSize: 10),
-                              ),
-                            ],
+                                    if (_isDesignatedScorer)
+                                      const Icon(Icons.edit, color: Color(0xFF00E676), size: 12),
+                                  ],
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  '$_strikerRuns (${_strikerBalls}b) • 4s:$_strikerFours 6s:$_strikerSixes',
+                                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                                ),
+                                Text(
+                                  'SR: ${strikerSR.toStringAsFixed(1)}',
+                                  style: const TextStyle(color: Colors.white60, fontSize: 10),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                       // Strike Swap Button
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: IconButton(
                           tooltip: 'Swap Strike',
                           icon: const Icon(Icons.swap_horiz, color: AppTheme.primaryGold, size: 24),
@@ -1810,39 +1910,45 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
                       ),
                       // Non-Striker Box
                       Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.cardBg,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.white12),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  const Text('🏏', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                                  const SizedBox(width: 4),
-                                  Expanded(
-                                    child: Text(
-                                      _nonStrikerName,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                        child: InkWell(
+                          onTap: _isDesignatedScorer ? () => _showChangeBatsmanSheet(isStriker: false) : null,
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppTheme.cardBg,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.white12),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Text('🏏', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                                    const SizedBox(width: 4),
+                                    Expanded(
+                                      child: Text(
+                                        _nonStrikerName,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                '$_nonStrikerRuns (${_nonStrikerBalls}b) • 4s:$_nonStrikerFours 6s:$_nonStrikerSixes',
-                                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
-                              ),
-                              Text(
-                                'SR: ${nonStrikerSR.toStringAsFixed(1)}',
-                                style: const TextStyle(color: Colors.white60, fontSize: 10),
-                              ),
-                            ],
+                                    if (_isDesignatedScorer)
+                                      const Icon(Icons.edit, color: Colors.white38, size: 12),
+                                  ],
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  '$_nonStrikerRuns (${_nonStrikerBalls}b) • 4s:$_nonStrikerFours 6s:$_nonStrikerSixes',
+                                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                                ),
+                                Text(
+                                  'SR: ${nonStrikerSR.toStringAsFixed(1)}',
+                                  style: const TextStyle(color: Colors.white60, fontSize: 10),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),

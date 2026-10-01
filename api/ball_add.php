@@ -112,9 +112,9 @@ $legal_balls = (int)($totals['legal'] ?? 0);
 $total_runs  = (int)($totals['runs'] ?? 0);
 $total_wkts  = (int)($totals['wkts'] ?? 0);
 
-$overs_limit   = (int)($inn['match_overs'] ?? 20);
+$overs_limit   = (int)($inn['overs_limit_override'] ?: ($inn['match_overs'] ?: 20));
 if ($overs_limit <= 0) $overs_limit = 20;
-$wickets_limit = (int)($inn['match_wickets'] ?? 10);
+$wickets_limit = (int)($inn['match_wickets'] ?: 10);
 if ($wickets_limit <= 0) $wickets_limit = 10;
 $max_balls     = $overs_limit * 6;
 

@@ -36,6 +36,19 @@ if ($team_id <= 0 || empty($name)) {
     exit;
 }
 
+$currentUser = app_optional_auth($pdo);
+if ($currentUser) {
+    require_once __DIR__ . '/team_ops.php';
+    if (function_exists('get_team_user_role')) {
+        $perms = get_team_user_role($pdo, $team_id, $currentUser);
+        if (!$perms['can_add_players']) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Unauthorized: Only Team Leaders and Co-Leaders can add players to the squad.']);
+            exit;
+        }
+    }
+}
+
 $sourcePlayerId = (int)($input['source_player_id'] ?? ($input['player_id'] ?? 0));
 
 // If mobile was masked in UI search results (e.g. 97******13), retrieve the real unmasked mobile from DB

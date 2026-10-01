@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/api_service.dart';
 import '../../core/theme.dart';
+import '../match/match_create_screen.dart';
 
 class TeamDetailScreen extends StatefulWidget {
   final int teamId;
@@ -17,6 +18,12 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   bool _isLoading = true;
   Map<String, dynamic>? _team;
   List<dynamic> _squad = [];
+  Map<String, dynamic>? _permissions;
+
+  bool get _canManageTeam => _permissions?['can_manage_team'] == true;
+  bool get _canManageRoles => _permissions?['can_manage_roles'] == true;
+  bool get _canAddPlayers => _permissions?['can_add_players'] == true;
+  bool get _canRemovePlayers => _permissions?['can_remove_players'] == true;
 
   final TextEditingController _playerNameController = TextEditingController();
   final TextEditingController _mobileController = TextEditingController();
@@ -51,6 +58,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
         setState(() {
           _team = res.data['team'];
           _squad = res.data['squad'] as List? ?? [];
+          _permissions = res.data['permissions'] as Map<String, dynamic>? ?? {};
           _isLoading = false;
         });
       }
@@ -531,14 +539,16 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
         backgroundColor: AppTheme.cardBackground,
         elevation: 0,
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: null,
-        backgroundColor: AppTheme.gold,
-        foregroundColor: const Color(0xFF070710),
-        icon: const Icon(Icons.person_add),
-        label: Text('ADD PLAYER', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
-        onPressed: _showAddPlayerSheet,
-      ),
+      floatingActionButton: _canAddPlayers
+          ? FloatingActionButton.extended(
+              heroTag: null,
+              backgroundColor: AppTheme.gold,
+              foregroundColor: const Color(0xFF070710),
+              icon: const Icon(Icons.person_add),
+              label: Text('ADD PLAYER', style: GoogleFonts.outfit(fontWeight: FontWeight.bold)),
+              onPressed: _showAddPlayerSheet,
+            )
+          : null,
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -586,6 +596,36 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
                     ],
                   ),
                   const SizedBox(height: 14),
+                  // Challenge Team / Play Match Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.gold,
+                        foregroundColor: const Color(0xFF070710),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      icon: const Icon(Icons.sports_cricket, size: 20),
+                      label: Text(
+                        _canManageTeam ? 'HOST MATCH WITH THIS TEAM 🏏' : '⚔️ CHALLENGE THIS TEAM / PLAY MATCH',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => MatchCreateScreen(
+                              initialTeamAId: _canManageTeam ? widget.teamId : null,
+                              initialTeamBId: _canManageTeam ? null : widget.teamId,
+                              initialTeamBName: _canManageTeam ? null : teamName,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   // Share WhatsApp Registration Link Button
                   SizedBox(
                     width: double.infinity,
@@ -625,12 +665,13 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
                   'Squad Players (${_squad.length})',
                   style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
-                TextButton.icon(
-                  style: TextButton.styleFrom(foregroundColor: AppTheme.gold),
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('Add Player', style: TextStyle(fontWeight: FontWeight.bold)),
-                  onPressed: _showAddPlayerSheet,
-                ),
+                if (_canAddPlayers)
+                  TextButton.icon(
+                    style: TextButton.styleFrom(foregroundColor: AppTheme.gold),
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('Add Player', style: TextStyle(fontWeight: FontWeight.bold)),
+                    onPressed: _showAddPlayerSheet,
+                  ),
               ],
             ),
             const SizedBox(height: 10),
@@ -722,66 +763,69 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
                         '📞 ${player['mobile'] ?? 'N/A'} • ${player['role'] ?? 'BAT'} • #${player['jersey_number'] ?? '-'}',
                         style: const TextStyle(color: Colors.white60, fontSize: 12),
                       ),
-                      trailing: PopupMenuButton<String>(
-                        icon: const Icon(Icons.more_vert, color: Colors.white60),
-                        color: const Color(0xFF1E1E38),
-                        onSelected: (val) {
-                          if (val == 'leader') {
-                            _handleSetCaptain(playerId, pName);
-                          } else if (val == 'co_leader') {
-                            _handleSetClanRole(playerId, pName, 'co_leader');
-                          } else if (val == 'member') {
-                            _handleSetClanRole(playerId, pName, 'member');
-                          } else if (val == 'remove') {
-                            _handleRemovePlayer(playerId, pName);
-                          }
-                        },
-                        itemBuilder: (ctx) => [
-                          if (!isLeader)
-                            const PopupMenuItem(
-                              value: 'leader',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.star, color: Colors.amber, size: 18),
-                                  SizedBox(width: 8),
-                                  Text('Make Team Leader 👑', style: TextStyle(color: Colors.white)),
-                                ],
-                              ),
-                            ),
-                          if (!isCoLeader)
-                            const PopupMenuItem(
-                              value: 'co_leader',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.military_tech, color: Colors.purpleAccent, size: 18),
-                                  SizedBox(width: 8),
-                                  Text('Promote to Co-Leader ⭐', style: TextStyle(color: Colors.white)),
-                                ],
-                              ),
-                            ),
-                          if (isLeader || isCoLeader)
-                            const PopupMenuItem(
-                              value: 'member',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.person_outline, color: Colors.white70, size: 18),
-                                  SizedBox(width: 8),
-                                  Text('Set as Regular Member 🏏', style: TextStyle(color: Colors.white)),
-                                ],
-                              ),
-                            ),
-                          const PopupMenuItem(
-                            value: 'remove',
-                            child: Row(
-                              children: [
-                                Icon(Icons.delete, color: Colors.redAccent, size: 18),
-                                SizedBox(width: 8),
-                                Text('Remove Player', style: TextStyle(color: Colors.redAccent)),
+                      trailing: _canManageTeam
+                          ? PopupMenuButton<String>(
+                              icon: const Icon(Icons.more_vert, color: Colors.white60),
+                              color: const Color(0xFF1E1E38),
+                              onSelected: (val) {
+                                if (val == 'leader') {
+                                  _handleSetCaptain(playerId, pName);
+                                } else if (val == 'co_leader') {
+                                  _handleSetClanRole(playerId, pName, 'co_leader');
+                                } else if (val == 'member') {
+                                  _handleSetClanRole(playerId, pName, 'member');
+                                } else if (val == 'remove') {
+                                  _handleRemovePlayer(playerId, pName);
+                                }
+                              },
+                              itemBuilder: (ctx) => [
+                                if (_canManageRoles && !isLeader)
+                                  const PopupMenuItem(
+                                    value: 'leader',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.star, color: Colors.amber, size: 18),
+                                        SizedBox(width: 8),
+                                        Text('Make Team Leader 👑', style: TextStyle(color: Colors.white)),
+                                      ],
+                                    ),
+                                  ),
+                                if (_canManageRoles && !isCoLeader)
+                                  const PopupMenuItem(
+                                    value: 'co_leader',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.military_tech, color: Colors.purpleAccent, size: 18),
+                                        SizedBox(width: 8),
+                                        Text('Promote to Co-Leader ⭐', style: TextStyle(color: Colors.white)),
+                                      ],
+                                    ),
+                                  ),
+                                if (_canManageRoles && (isLeader || isCoLeader))
+                                  const PopupMenuItem(
+                                    value: 'member',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.person_outline, color: Colors.white70, size: 18),
+                                        SizedBox(width: 8),
+                                        Text('Set as Regular Member 🏏', style: TextStyle(color: Colors.white)),
+                                      ],
+                                    ),
+                                  ),
+                                if (_canRemovePlayers && (!isLeader || _canManageRoles) && (!isCoLeader || _canManageRoles))
+                                  const PopupMenuItem(
+                                    value: 'remove',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.delete, color: Colors.redAccent, size: 18),
+                                        SizedBox(width: 8),
+                                        Text('Remove Player', style: TextStyle(color: Colors.redAccent)),
+                                      ],
+                                    ),
+                                  ),
                               ],
-                            ),
-                          ),
-                        ],
-                      ),
+                            )
+                          : null,
                     ),
                   );
                 },

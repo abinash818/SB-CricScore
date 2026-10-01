@@ -51,6 +51,82 @@ if ($action === 'list') {
     exit;
 }
 
+// Helper function to resolve current user role and permissions for a team
+function get_team_user_role(PDO $pdo, int $teamId, ?array $currentUser): array {
+    if (!$currentUser || empty($currentUser['id'])) {
+        return [
+            'is_owner'          => false,
+            'is_leader'         => false,
+            'is_co_leader'      => false,
+            'is_member'         => false,
+            'can_manage_team'   => false,
+            'can_manage_roles'  => false,
+            'can_add_players'   => false,
+            'can_remove_players'=> false,
+            'viewer_role'       => 'guest'
+        ];
+    }
+
+    $tStmt = $pdo->prepare("SELECT owner_id FROM teams WHERE id = ?");
+    $tStmt->execute([$teamId]);
+    $ownerId = (int)$tStmt->fetchColumn();
+
+    $isOwner = (!empty($ownerId) && (int)$currentUser['id'] === $ownerId);
+
+    $userMobile = $currentUser['mobile'] ?? ($currentUser['phone'] ?? '');
+    $cleanMobile = preg_replace('/\D+/', '', $userMobile);
+    $last10 = (strlen($cleanMobile) >= 10) ? substr($cleanMobile, -10) : $cleanMobile;
+
+    $userName = trim($currentUser['name'] ?? '');
+
+    $isLeader = $isOwner;
+    $isCoLeader = false;
+    $isMember = false;
+
+    $pRow = null;
+    if (!empty($last10) && strlen($last10) >= 7) {
+        $pStmt = $pdo->prepare("SELECT id, name, is_captain, team_role FROM players WHERE team_id = ? AND (mobile = ? OR mobile = ? OR mobile = ? OR mobile LIKE ?) LIMIT 1");
+        $pStmt->execute([$teamId, $userMobile, '+91' . $last10, $last10, '%' . $last10]);
+        $pRow = $pStmt->fetch(PDO::FETCH_ASSOC);
+    }
+    if (!$pRow && !empty($userName) && strlen($userName) >= 2) {
+        $pStmt = $pdo->prepare("SELECT id, name, is_captain, team_role FROM players WHERE team_id = ? AND LOWER(TRIM(name)) = ? LIMIT 1");
+        $pStmt->execute([$teamId, strtolower($userName)]);
+        $pRow = $pStmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    if ($pRow) {
+        $isMember = true;
+        $r = strtolower($pRow['team_role'] ?? '');
+        if ($r === 'leader' || (int)$pRow['is_captain'] === 1) {
+            $isLeader = true;
+        } else if ($r === 'co_leader') {
+            $isCoLeader = true;
+        }
+    }
+
+    // Auto-heal: If team has no owner assigned and user is the captain/leader, assign them as owner
+    if (empty($ownerId) && $isLeader && !empty($currentUser['id'])) {
+        $pdo->prepare("UPDATE teams SET owner_id = ? WHERE id = ?")->execute([(int)$currentUser['id'], $teamId]);
+        $isOwner = true;
+    }
+
+    $canManageRoles = ($isLeader || $isOwner);
+    $canManageTeam  = ($isLeader || $isCoLeader || $isOwner);
+
+    return [
+        'is_owner'          => $isOwner,
+        'is_leader'         => $isLeader,
+        'is_co_leader'      => $isCoLeader,
+        'is_member'         => $isMember,
+        'can_manage_team'   => $canManageTeam,
+        'can_manage_roles'  => $canManageRoles,
+        'can_add_players'   => $canManageTeam,
+        'can_remove_players'=> $canManageTeam,
+        'viewer_role'       => $isLeader ? 'leader' : ($isCoLeader ? 'co_leader' : ($isMember ? 'member' : ($isOwner ? 'owner' : 'guest')))
+    ];
+}
+
 // ── 2. GET TEAM DETAILS & SQUAD ──────────────────────────────────────────────
 if ($action === 'get') {
     $teamId = (int)($_GET['team_id'] ?? 0);
@@ -82,27 +158,43 @@ if ($action === 'get') {
         }
     } catch (Throwable $e) {}
 
+    $currentUser = app_optional_auth($pdo);
+    $permissions = get_team_user_role($pdo, $teamId, $currentUser);
+
     // Squad Players (with privacy masking on mobile numbers & team_role)
     $pStmt = $pdo->prepare("SELECT * FROM players WHERE team_id = ? ORDER BY is_captain DESC, (team_role = 'leader') DESC, (team_role = 'co_leader') DESC, id ASC");
     $pStmt->execute([$teamId]);
     $players = $pStmt->fetchAll(PDO::FETCH_ASSOC);
 
+    $hasLeaderAlready = false;
     $sanitizedPlayers = [];
     foreach ($players as $p) {
         $rawMob = $p['mobile'] ?? '';
         $digits = preg_replace('/\D+/', '', $rawMob);
         $maskedMob = (strlen($digits) >= 10) ? substr($digits, 0, 2) . '******' . substr($digits, -2) : (empty($rawMob) ? '' : '******');
         $p['mobile'] = $maskedMob;
-        if (empty($p['team_role'])) {
-            $p['team_role'] = (!empty($p['is_captain']) && (int)$p['is_captain'] === 1) ? 'leader' : 'member';
+
+        $role = strtolower($p['team_role'] ?? '');
+        if (empty($role)) {
+            $role = (!empty($p['is_captain']) && (int)$p['is_captain'] === 1) ? 'leader' : 'member';
         }
+        if ($role === 'leader') {
+            if (!$hasLeaderAlready) {
+                $hasLeaderAlready = true;
+            } else {
+                // Ensure only 1 official leader badge is shown per squad
+                $role = 'co_leader';
+            }
+        }
+        $p['team_role'] = $role;
         $sanitizedPlayers[] = $p;
     }
 
     echo json_encode([
-        'success' => true,
-        'team'    => $team,
-        'squad'   => $sanitizedPlayers,
+        'success'     => true,
+        'team'        => $team,
+        'squad'       => $sanitizedPlayers,
+        'permissions' => $permissions,
     ]);
     exit;
 }
@@ -630,6 +722,14 @@ if ($action === 'set_captain') {
         exit;
     }
 
+    $currentUser = app_require_auth($pdo);
+    $perms = get_team_user_role($pdo, $teamId, $currentUser);
+    if (!$perms['can_manage_roles']) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Unauthorized: Only Team Leader or Owner can transfer leadership 👑']);
+        exit;
+    }
+
     $pdo->prepare("UPDATE players SET is_captain = 0, team_role = 'member' WHERE team_id = ? AND team_role = 'leader'")->execute([$teamId]);
     $stmt = $pdo->prepare("UPDATE players SET is_captain = 1, team_role = 'leader' WHERE id = ? AND team_id = ?");
     $stmt->execute([$playerId, $teamId]);
@@ -648,6 +748,14 @@ if ($action === 'set_clan_role' || $action === 'set_member_role') {
     if ($teamId <= 0 || $playerId <= 0) {
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'team_id and player_id are required']);
+        exit;
+    }
+
+    $currentUser = app_require_auth($pdo);
+    $perms = get_team_user_role($pdo, $teamId, $currentUser);
+    if (!$perms['can_manage_roles']) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Unauthorized: Only Team Leader or Owner can modify team roles']);
         exit;
     }
 
@@ -687,6 +795,26 @@ if ($action === 'remove_player') {
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'team_id and player_id are required']);
         exit;
+    }
+
+    $currentUser = app_require_auth($pdo);
+    $perms = get_team_user_role($pdo, $teamId, $currentUser);
+    if (!$perms['can_remove_players']) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Unauthorized: You do not have permission to remove players from this squad']);
+        exit;
+    }
+
+    // Co-Leaders cannot remove the Leader or another Co-Leader
+    if ($perms['is_co_leader'] && !$perms['is_leader'] && !$perms['is_owner']) {
+        $targetStmt = $pdo->prepare("SELECT team_role, is_captain FROM players WHERE id = ?");
+        $targetStmt->execute([$playerId]);
+        $targetPlayer = $targetStmt->fetch(PDO::FETCH_ASSOC);
+        if ($targetPlayer && ($targetPlayer['team_role'] === 'leader' || $targetPlayer['team_role'] === 'co_leader' || (int)$targetPlayer['is_captain'] === 1)) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Co-Leaders cannot remove Team Leaders or fellow Co-Leaders']);
+            exit;
+        }
     }
 
     $stmt = $pdo->prepare("DELETE FROM players WHERE id = ? AND team_id = ?");

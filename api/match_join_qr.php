@@ -165,6 +165,16 @@ try {
         ");
     } catch (Throwable $e) {}
 
+    $currentUser = app_optional_auth($pdo);
+    if ($currentUser && !empty($currentUser['id'])) {
+        $chkOwner = $pdo->prepare("SELECT owner_id FROM teams WHERE id = ?");
+        $chkOwner->execute([$team_id]);
+        $currOwner = $chkOwner->fetchColumn();
+        if (empty($currOwner)) {
+            $pdo->prepare("UPDATE teams SET owner_id = ? WHERE id = ?")->execute([(int)$currentUser['id'], $team_id]);
+        }
+    }
+
     $pdo->beginTransaction();
 
     // 2. Attach Team B to Match

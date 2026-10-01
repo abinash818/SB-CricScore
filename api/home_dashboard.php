@@ -24,17 +24,30 @@ $phone    = trim($_GET['phone'] ?? ($currentUser['mobile'] ?? ''));
 
 // 1. Identify User's Teams for "My Matches"
 $myTeamIds = [];
+$cleanPhone = '';
 if (!empty($phone)) {
     $cleanPhone = substr(preg_replace('/[^0-9]/', '', $phone), -10);
-    if (!empty($cleanPhone)) {
-        // Player / Captain in teams
-        $pStmt = $pdo->prepare("SELECT DISTINCT team_id FROM players WHERE mobile LIKE ?");
-        $pStmt->execute(["%$cleanPhone%"]);
-        while ($r = $pStmt->fetch(PDO::FETCH_ASSOC)) {
-            $myTeamIds[] = (int)$r['team_id'];
-        }
+}
+if (empty($cleanPhone) && $currentUser && !empty($currentUser['mobile'])) {
+    $cleanPhone = substr(preg_replace('/[^0-9]/', '', $currentUser['mobile']), -10);
+}
+
+if (!empty($cleanPhone)) {
+    // Player / Captain in teams
+    $pStmt = $pdo->prepare("SELECT DISTINCT team_id FROM players WHERE mobile LIKE ?");
+    $pStmt->execute(["%$cleanPhone%"]);
+    while ($r = $pStmt->fetch(PDO::FETCH_ASSOC)) {
+        $myTeamIds[] = (int)$r['team_id'];
+    }
+
+    // Teams from match_playing_xi where user's player was included
+    $xiStmt = $pdo->prepare("SELECT DISTINCT team_id FROM match_playing_xi WHERE player_id IN (SELECT id FROM players WHERE mobile LIKE ?)");
+    $xiStmt->execute(["%$cleanPhone%"]);
+    while ($r = $xiStmt->fetch(PDO::FETCH_ASSOC)) {
+        $myTeamIds[] = (int)$r['team_id'];
     }
 }
+
 if ($currentUser && !empty($currentUser['id'])) {
     $tOwn = $pdo->prepare("SELECT id FROM teams WHERE owner_id = ?");
     $tOwn->execute([(int)$currentUser['id']]);
@@ -132,17 +145,25 @@ function formatMatchSummary(PDO $pdo, array $m): array {
 }
 
 // Function to build query with filter
-function getMatchesByFilter(PDO $pdo, string $statusClause, string $filter, string $district, string $state, array $myTeamIds, int $limit = 10): array {
+function getMatchesByFilter(PDO $pdo, string $statusClause, string $filter, string $district, string $state, array $myTeamIds, string $cleanPhone = '', int $limit = 10): array {
     $where = [$statusClause];
     $params = [];
 
     if ($filter === 'my_matches') {
+        $myConds = [];
         if (!empty($myTeamIds)) {
             $inPlaceholders = implode(',', array_fill(0, count($myTeamIds), '?'));
-            $where[] = "(team_a_id IN ($inPlaceholders) OR team_b_id IN ($inPlaceholders))";
+            $myConds[] = "team_a_id IN ($inPlaceholders) OR team_b_id IN ($inPlaceholders)";
             $params = array_merge($params, $myTeamIds, $myTeamIds);
+        }
+        if (!empty($cleanPhone)) {
+            $myConds[] = "id IN (SELECT match_id FROM match_playing_xi WHERE player_id IN (SELECT id FROM players WHERE mobile LIKE ?))";
+            $params[] = "%$cleanPhone%";
+        }
+        if (!empty($myConds)) {
+            $where[] = "(" . implode(' OR ', $myConds) . ")";
         } else {
-            // No teams yet for this user
+            // No teams or registered phone yet for this user
             return [];
         }
     } else if ($filter === 'district' && !empty($district)) {
@@ -165,19 +186,19 @@ function getMatchesByFilter(PDO $pdo, string $statusClause, string $filter, stri
 }
 
 // 1. Live Matches
-$liveMatches = getMatchesByFilter($pdo, "status IN ('live', 'in_progress')", $filter, $district, $state, $myTeamIds, 10);
+$liveMatches = getMatchesByFilter($pdo, "status IN ('live', 'in_progress')", $filter, $district, $state, $myTeamIds, $cleanPhone, 10);
 
 // Fallback: If "my_matches" filter returned empty, also provide general district live matches as recommendation
 $districtLiveMatches = [];
 if ($filter === 'my_matches' && empty($liveMatches) && !empty($district)) {
-    $districtLiveMatches = getMatchesByFilter($pdo, "status IN ('live', 'in_progress')", 'district', $district, $state, [], 5);
+    $districtLiveMatches = getMatchesByFilter($pdo, "status IN ('live', 'in_progress')", 'district', $district, $state, [], '', 5);
 }
 
 // 2. Upcoming Matches
-$upcomingMatches = getMatchesByFilter($pdo, "status IN ('scheduled', 'upcoming')", $filter, $district, $state, $myTeamIds, 10);
+$upcomingMatches = getMatchesByFilter($pdo, "status IN ('scheduled', 'upcoming')", $filter, $district, $state, $myTeamIds, $cleanPhone, 10);
 
 // 3. Recent Results
-$recentResults = getMatchesByFilter($pdo, "status IN ('completed', 'finished')", $filter, $district, $state, $myTeamIds, 10);
+$recentResults = getMatchesByFilter($pdo, "status IN ('completed', 'finished')", $filter, $district, $state, $myTeamIds, $cleanPhone, 10);
 
 // 4. Active Tournaments filtered by District/State
 $tournParams = [];
