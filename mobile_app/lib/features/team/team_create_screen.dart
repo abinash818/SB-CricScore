@@ -151,6 +151,10 @@ class _TeamCreateScreenState extends State<TeamCreateScreen> {
     setState(() => _isLoading = true);
 
     try {
+      final String creatorName = _creatorNameController.text.trim().isNotEmpty
+          ? _creatorNameController.text.trim()
+          : 'Team Captain';
+
       final res = await _apiService.createUserTeam(
         name: _nameController.text.trim(),
         shortName: _shortNameController.text.trim(),
@@ -158,12 +162,12 @@ class _TeamCreateScreenState extends State<TeamCreateScreen> {
         icon: _selectedIcon,
         tournamentId: widget.tournamentId ?? 1,
         addCaptain: _addMeAsCaptain,
-        creatorName: _creatorNameController.text.trim(),
+        creatorName: creatorName,
         creatorMobile: _creatorMobileController.text.trim(),
         creatorRole: _creatorRole,
         creatorBattingStyle: _creatorBattingStyle,
         creatorBowlingStyle: _creatorBowlingStyle,
-        creatorJersey: _creatorJerseyController.text.trim(),
+        creatorJersey: _creatorJerseyController.text.trim().isNotEmpty ? _creatorJerseyController.text.trim() : '7',
       );
 
       if (mounted) {

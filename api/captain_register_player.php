@@ -38,7 +38,7 @@ if ($team_id <= 0 || empty($name)) {
 
 $currentUser = app_optional_auth($pdo);
 if ($currentUser) {
-    require_once __DIR__ . '/team_ops.php';
+    require_once __DIR__ . '/team_helpers.php';
     if (function_exists('get_team_user_role')) {
         $perms = get_team_user_role($pdo, $team_id, $currentUser);
         if (!$perms['can_add_players']) {
@@ -60,7 +60,7 @@ if (strpos($mobile, '*') !== false && $sourcePlayerId > 0) {
         if (!empty($origMob)) {
             $mobile = $origMob;
         } else {
-            $uStmt = $pdo->prepare("SELECT phone FROM app_users WHERE id = ? LIMIT 1");
+            $uStmt = $pdo->prepare("SELECT mobile FROM app_users WHERE id = ? LIMIT 1");
             $uStmt->execute([$sourcePlayerId]);
             $mobile = $uStmt->fetchColumn() ?: '';
         }
@@ -174,20 +174,22 @@ try {
     $insStmt->execute([$team_id, $name, $role, $jersey_number, $mobile, $batting_style, $bowling_style, $profilePic, $now]);
     $playerId = (int)$pdo->lastInsertId();
 
+    error_log("[captain_register_player] Player inserted successfully: ID=$playerId, TeamID=$team_id, Name=$name, Mobile=$mobile");
 
-
-    // 5. If mobile given, ensure user record exists
-    if (!empty($mobile)) {
-        $userCheck = $pdo->prepare("SELECT id FROM users WHERE phone = ?");
-        $userCheck->execute([$mobile]);
-        if (!$userCheck->fetch()) {
-            $username = 'player_' . $mobile;
-            $defaultHash = password_hash('sb_cricket_user', PASSWORD_DEFAULT);
-            $userIns = $pdo->prepare("
-                INSERT INTO users (username, phone, role, batting_style, bowling_style, is_verified, password_hash)
-                VALUES (?, ?, ?, ?, ?, 1, ?)
-            ");
-            $userIns->execute([$username, $mobile, $role, $batting_style, $bowling_style, $defaultHash]);
+    // 5. If mobile given, safely sync or create app_users record
+    if (!empty($mobile) && strpos($mobile, '*') === false) {
+        try {
+            $uCheck = $pdo->prepare("SELECT id FROM app_users WHERE mobile = ? OR mobile = ?");
+            $uCheck->execute([$mobile, '+91' . $mobile]);
+            if (!$uCheck->fetch()) {
+                $uIns = $pdo->prepare("
+                    INSERT INTO app_users (mobile, name, role, batting_style, bowling_style, jersey_number)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ");
+                $uIns->execute([$mobile, $name, $role, $batting_style, $bowling_style, $jersey_number]);
+            }
+        } catch (Throwable $e) {
+            error_log("[captain_register_player] Warning: Could not sync to app_users: " . $e->getMessage());
         }
     }
 
@@ -200,6 +202,11 @@ try {
     ]);
 
 } catch (Exception $e) {
+    error_log("[captain_register_player] Database Exception: " . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+    echo json_encode([
+        'success' => false,
+        'message' => 'Database error: ' . $e->getMessage(),
+        'error_details' => $e->getMessage()
+    ]);
 }

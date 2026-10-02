@@ -38,6 +38,8 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   List<dynamic> _searchResults = [];
   bool _isSearching = false;
   Timer? _searchDebounce;
+  final ScrollController _scrollController = ScrollController();
+  int? _recentlyAddedPlayerId;
 
   @override
   void initState() {
@@ -48,19 +50,42 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
   @override
   void dispose() {
     _searchDebounce?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _fetchTeamSquad() async {
+  Future<void> _fetchTeamSquad({int? highlightPlayerId}) async {
     try {
-      final res = await _apiService.dio.get('/team_ops.php?action=get&team_id=${widget.teamId}');
+      final res = await _apiService.dio.get(
+        '/team_ops.php',
+        queryParameters: {
+          'action': 'get',
+          'team_id': widget.teamId,
+          '_t': DateTime.now().millisecondsSinceEpoch,
+        },
+      );
       if (mounted) {
         setState(() {
           _team = res.data['team'];
           _squad = res.data['squad'] as List? ?? [];
           _permissions = res.data['permissions'] as Map<String, dynamic>? ?? {};
+          if (highlightPlayerId != null && highlightPlayerId > 0) {
+            _recentlyAddedPlayerId = highlightPlayerId;
+          }
           _isLoading = false;
         });
+
+        if (highlightPlayerId != null && highlightPlayerId > 0) {
+          Future.delayed(const Duration(milliseconds: 200), () {
+            if (mounted && _scrollController.hasClients) {
+              _scrollController.animateTo(
+                _scrollController.position.maxScrollExtent + 200,
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeOutCubic,
+              );
+            }
+          });
+        }
       }
     } catch (_) {
       if (mounted) setState(() => _isLoading = false);
@@ -377,6 +402,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
 
   Future<void> _addExistingPlayerToSquad(Map<String, dynamic> player) async {
     setState(() => _isLoading = true);
+    debugPrint('[TeamSquad] Adding existing player: ${player['name']} (ID: ${player['id']}, Mobile: ${player['mobile']}) to team ${widget.teamId}');
     try {
       final int? srcPid = int.tryParse(player['id']?.toString() ?? '');
       final res = await _apiService.captainRegisterPlayer(
@@ -390,22 +416,42 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
         skipOtp: true,
         sourcePlayerId: srcPid,
       );
+      debugPrint('[TeamSquad] Add response: $res');
       if (mounted) {
-        if (res['success'] == true) {
+        final int? newPid = int.tryParse(res['player_id']?.toString() ?? (res['data']?['player_id']?.toString() ?? ''));
+        if (res['success'] == true && newPid != null && newPid > 0) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('${player['name']} added to team! 🎉'), backgroundColor: Colors.green),
           );
-          _fetchTeamSquad();
+          // Instant local state update for 0ms latency
+          if (!_squad.any((p) => p['id'] == newPid)) {
+            setState(() {
+              _squad.add({
+                'id': newPid,
+                'name': player['name'] ?? 'Player',
+                'mobile': player['mobile'] ?? '',
+                'role': player['role'] ?? 'BAT',
+                'jersey_number': player['jersey_number'] ?? '',
+                'team_role': 'member',
+                'is_captain': 0,
+              });
+              _recentlyAddedPlayerId = newPid;
+            });
+          }
+          await _fetchTeamSquad(highlightPlayerId: newPid);
         } else {
+          final errMsg = res['message'] ?? res['error_details'] ?? 'Failed to add player';
+          debugPrint('[TeamSquad] Failed to add: $errMsg');
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(res['message'] ?? 'Failed to add player'), backgroundColor: Colors.redAccent),
+            SnackBar(content: Text('⚠️ $errMsg'), backgroundColor: Colors.redAccent, duration: const Duration(seconds: 4)),
           );
         }
       }
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('[TeamSquad] Error adding player exception: $e\n$st');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error adding player: $e'), backgroundColor: Colors.redAccent),
+          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.redAccent, duration: const Duration(seconds: 4)),
         );
       }
     } finally {
@@ -415,6 +461,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
 
   Future<void> _registerNewPlayer(String name) async {
     setState(() => _isLoading = true);
+    debugPrint('[TeamSquad] Registering new player: $name to team ${widget.teamId}');
     try {
       final res = await _apiService.captainRegisterPlayer(
         teamId: widget.teamId,
@@ -426,22 +473,42 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
         jerseyNumber: _jerseyController.text.trim(),
         skipOtp: true,
       );
+      debugPrint('[TeamSquad] Register response: $res');
       if (mounted) {
-        if (res['success'] == true) {
+        final int? newPid = int.tryParse(res['player_id']?.toString() ?? (res['data']?['player_id']?.toString() ?? ''));
+        if (res['success'] == true && newPid != null && newPid > 0) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('$name registered and added to squad! 🎉'), backgroundColor: Colors.green),
           );
-          _fetchTeamSquad();
+          // Instant local state update for 0ms latency
+          if (!_squad.any((p) => p['id'] == newPid)) {
+            setState(() {
+              _squad.add({
+                'id': newPid,
+                'name': name,
+                'mobile': _mobileController.text.trim(),
+                'role': _selectedRole,
+                'jersey_number': _jerseyController.text.trim(),
+                'team_role': 'member',
+                'is_captain': 0,
+              });
+              _recentlyAddedPlayerId = newPid;
+            });
+          }
+          await _fetchTeamSquad(highlightPlayerId: newPid);
         } else {
+          final errMsg = res['message'] ?? res['error_details'] ?? 'Failed to register player';
+          debugPrint('[TeamSquad] Failed to register: $errMsg');
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(res['message'] ?? 'Failed to register player'), backgroundColor: Colors.redAccent),
+            SnackBar(content: Text('⚠️ $errMsg'), backgroundColor: Colors.redAccent, duration: const Duration(seconds: 4)),
           );
         }
       }
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('[TeamSquad] Error registering exception: $e\n$st');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error registering player: $e'), backgroundColor: Colors.redAccent),
+          SnackBar(content: Text('❌ Error: $e'), backgroundColor: Colors.redAccent, duration: const Duration(seconds: 4)),
         );
       }
     } finally {
@@ -550,6 +617,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
             )
           : null,
       body: SingleChildScrollView(
+        controller: _scrollController,
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -699,40 +767,48 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
                 itemCount: _squad.length,
                 itemBuilder: (context, index) {
                   final player = _squad[index];
-                  final String teamRole = (player['team_role'] ?? ((player['is_captain'] == 1 || player['is_captain'] == '1') ? 'leader' : 'member')).toString().toLowerCase();
-                  final bool isLeader = (teamRole == 'leader' || player['is_captain'] == 1 || player['is_captain'] == '1');
+                  final String teamRole = (player['team_role'] ?? 'member').toString().toLowerCase();
+                  final bool isLeader = (teamRole == 'leader');
                   final bool isCoLeader = (teamRole == 'co_leader');
                   final playerId = int.tryParse(player['id'].toString()) ?? 0;
                   final pName = player['name'] ?? 'Player';
+                  final bool isNewlyAdded = (_recentlyAddedPlayerId != null && _recentlyAddedPlayerId! > 0 && playerId == _recentlyAddedPlayerId);
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
                     decoration: BoxDecoration(
-                      color: isLeader
-                          ? AppTheme.gold.withValues(alpha: 0.12)
-                          : isCoLeader
-                              ? Colors.purpleAccent.withValues(alpha: 0.1)
-                              : AppTheme.cardBackground,
+                      color: isNewlyAdded
+                          ? Colors.green.withValues(alpha: 0.15)
+                          : isLeader
+                              ? AppTheme.gold.withValues(alpha: 0.12)
+                              : isCoLeader
+                                  ? Colors.purpleAccent.withValues(alpha: 0.1)
+                                  : AppTheme.cardBackground,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: isLeader
-                            ? AppTheme.gold
-                            : isCoLeader
-                                ? Colors.purpleAccent.withValues(alpha: 0.6)
-                                : Colors.white10,
+                        color: isNewlyAdded
+                            ? Colors.greenAccent
+                            : isLeader
+                                ? AppTheme.gold
+                                : isCoLeader
+                                    ? Colors.purpleAccent.withValues(alpha: 0.6)
+                                    : Colors.white10,
+                        width: isNewlyAdded ? 1.8 : 1.0,
                       ),
                     ),
                     child: ListTile(
                       leading: CircleAvatar(
-                        backgroundColor: isLeader
-                            ? AppTheme.gold
-                            : isCoLeader
-                                ? Colors.purpleAccent
-                                : const Color(0xFF1E1E38),
+                        backgroundColor: isNewlyAdded
+                            ? Colors.greenAccent
+                            : isLeader
+                                ? AppTheme.gold
+                                : isCoLeader
+                                    ? Colors.purpleAccent
+                                    : const Color(0xFF1E1E38),
                         child: Text(
                           '${index + 1}',
                           style: TextStyle(
-                            color: (isLeader || isCoLeader) ? Colors.black : Colors.white,
+                            color: (isNewlyAdded || isLeader || isCoLeader) ? Colors.black : Colors.white,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -745,6 +821,13 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
                               style: GoogleFonts.outfit(fontWeight: FontWeight.w600, color: Colors.white),
                             ),
                           ),
+                          if (isNewlyAdded)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              margin: const EdgeInsets.only(right: 6),
+                              decoration: BoxDecoration(color: Colors.greenAccent, borderRadius: BorderRadius.circular(4)),
+                              child: const Text('✨ NEW', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 10)),
+                            ),
                           if (isLeader)
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -830,6 +913,7 @@ class _TeamDetailScreenState extends State<TeamDetailScreen> with SingleTickerPr
                   );
                 },
               ),
+            const SizedBox(height: 120),
           ],
         ),
       ),

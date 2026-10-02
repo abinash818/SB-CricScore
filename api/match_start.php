@@ -94,7 +94,7 @@ try {
 
     $scorerPin = (string)mt_rand(1000, 9999);
 
-    // Create Innings 1 if not exists
+    // Create or Reset Innings 1
     $chk1 = $pdo->prepare("SELECT id FROM innings WHERE match_id=? AND innings_no=1");
     $chk1->execute([$match_id]);
     $i1 = $chk1->fetch(PDO::FETCH_ASSOC);
@@ -103,20 +103,12 @@ try {
         $ins1->execute([$match_id, $bat_first, $bowling, ($scorer_pid > 0 ? $scorer_pid : null), $scorerName, $scorerMobile]);
         $inn1_id = (int)$pdo->lastInsertId();
     } else {
-        $pdo->prepare("UPDATE innings SET batting_team_id=?, bowling_team_id=?, scorer_player_id=?, scorer_name=?, scorer_mobile=? WHERE id=?")->execute([$bat_first, $bowling, ($scorer_pid > 0 ? $scorer_pid : null), $scorerName, $scorerMobile, $i1['id']]);
+        $pdo->prepare("UPDATE innings SET batting_team_id=?, bowling_team_id=?, scorer_player_id=?, scorer_name=?, scorer_mobile=?, completed=0, target=NULL WHERE id=?")->execute([$bat_first, $bowling, ($scorer_pid > 0 ? $scorer_pid : null), $scorerName, $scorerMobile, $i1['id']]);
         $inn1_id = (int)$i1['id'];
     }
 
-    // Create Innings 2 if not exists
-    $chk2 = $pdo->prepare("SELECT id FROM innings WHERE match_id=? AND innings_no=2");
-    $chk2->execute([$match_id]);
-    $i2 = $chk2->fetch(PDO::FETCH_ASSOC);
-    if (!$i2) {
-        $ins2 = $pdo->prepare("INSERT INTO innings(match_id, innings_no, batting_team_id, bowling_team_id, completed) VALUES(?, 2, ?, ?, 0)");
-        $ins2->execute([$match_id, $bowling, $bat_first]);
-    } else {
-        $pdo->prepare("UPDATE innings SET batting_team_id=?, bowling_team_id=? WHERE id=?")->execute([$bowling, $bat_first, $i2['id']]);
-    }
+    // Delete any premature/dummy Innings 2+ (Innings 2 must only be created when Innings 1 is completed!)
+    $pdo->prepare("DELETE FROM innings WHERE match_id=? AND innings_no > 1")->execute([$match_id]);
 
     // Update Match status to live with toss and active scorer details
     $upd = $pdo->prepare("UPDATE matches SET status='live', toss_winner_team_id=?, toss_decision=?, toss_caller_team_id=?, toss_call=?, toss_result=?, active_scorer_player_id=?, active_scorer_name=?, active_scorer_mobile=?, scorer_pin=? WHERE id=?");

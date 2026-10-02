@@ -348,7 +348,8 @@ foreach ($innings as $i) {
 
     $innData = [
         'id' => (int)$i['id'], 'innings_no' => (int)$i['innings_no'], 'batting_team' => $bt, 'batting_team_id' => (int)$i['batting_team_id'],
-        'completed' => (int)$i['completed'], 'summary' => array_merge($totals, ['recent_balls' => array_reverse($recent)]),
+        'completed' => (int)$i['completed'], 'overs_limit_override' => $i['overs_limit_override'] ? (int)$i['overs_limit_override'] : null,
+        'summary' => array_merge($totals, ['recent_balls' => array_reverse($recent)]),
         'target' => ($i['innings_no'] == 2) ? $target : null, 'commentary' => $details['comm'], 
         'graph_data' => $details['graph'], 'wickets_data' => $details['wickets'], 'fow' => $details['fow'], 
         'current_partnership' => $details['partnership'], 'scorecard' => $scorecard, 'overs_history' => $details['overs_history'], 'last_ball' => $details['last_ball']

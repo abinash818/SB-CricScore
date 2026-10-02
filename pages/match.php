@@ -327,6 +327,38 @@ $canEdit = $user ? true : false;
   </div>
 </div>
 
+<div id="modal-innings-complete" class="modal-wrap">
+  <div class="modal-box" style="text-align:center; max-width:420px; border:2px solid var(--accent-gold); box-shadow:0 0 25px rgba(223,186,115,0.35);">
+    <div style="font-size:36px; margin-bottom:8px;">🏁</div>
+    <h3 style="color:var(--accent-gold-light); margin:0 0 6px 0; font-size:20px; text-transform:uppercase; letter-spacing:1px;">1st Innings Complete</h3>
+    <p class="muted" style="font-size:13px; margin-bottom:16px;"><span id="inn-complete-bat-team" style="color:#fff; font-weight:bold;">Team</span> innings has ended.</p>
+    
+    <div style="background:#131326; border:1px solid rgba(223,186,115,0.3); border-radius:12px; padding:16px; margin-bottom:18px;">
+        <div style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:800; letter-spacing:1px;">Final Innings Score</div>
+        <div id="inn-complete-score" style="font-size:28px; font-weight:900; color:#fff; margin:6px 0 10px 0;">0/0 (0.0 Ov)</div>
+        <div id="inn-complete-target-text" style="font-size:16px; font-weight:bold; color:var(--accent-gold); padding:8px; background:rgba(223,186,115,0.1); border-radius:8px;">Target: 1 Run</div>
+    </div>
+
+    <button onclick="confirmStartInnings2()" class="btn" style="width:100%; padding:14px; background:var(--gold-gradient); color:#070710; font-weight:900; font-size:15px; border-radius:8px; box-shadow:0 4px 15px rgba(223,186,115,0.4); cursor:pointer;">
+        🚀 START INNINGS 2 (CHASE)
+    </button>
+    <button onclick="document.getElementById('modal-innings-complete').style.display='none'" class="btn danger" style="width:100%; margin-top:10px; background:rgba(255,255,255,0.08); color:#cbd5e1; border:none; padding:10px; cursor:pointer;">
+        Review Scorecard
+    </button>
+  </div>
+</div>
+
+<div id="modal-match-ended" class="modal-wrap">
+  <div class="modal-box" style="text-align:center; max-width:420px; border:2px solid #34d399; box-shadow:0 0 25px rgba(52,211,153,0.3);">
+    <div style="font-size:36px; margin-bottom:8px;">🏆</div>
+    <h3 style="color:#34d399; margin:0 0 6px 0; font-size:20px; text-transform:uppercase; letter-spacing:1px;">Match Finished</h3>
+    <div id="match-ended-summary" style="font-size:16px; font-weight:bold; color:#fff; margin:15px 0 20px 0; padding:12px; background:#131326; border-radius:10px; border:1px solid rgba(52,211,153,0.3);"></div>
+    <button onclick="document.getElementById('modal-match-ended').style.display='none'; refresh();" class="btn" style="width:100%; padding:14px; background:var(--gold-gradient); color:#070710; font-weight:900; font-size:15px; border-radius:8px; cursor:pointer;">
+        View Final Scorecard & Result
+    </button>
+  </div>
+</div>
+
 <div class="wrap">
   <div class="topbar">
     <div class="brand">
@@ -841,8 +873,28 @@ function updateAutoDetect() {
         } 
     }
     
-    let legal = currentInnings.summary.legal_balls;
-    if(legal > 0 && legal % 6 === 0 && last.is_legal == 1) { 
+    const oversLimit = parseInt(currentInnings.overs_limit_override || matchData.match.overs_limit || 20);
+    const maxBalls = (oversLimit > 0 ? oversLimit : 20) * 6;
+    const wicketsLimit = parseInt(matchData.match.wickets_limit || 10);
+    const legal = parseInt(currentInnings.summary.legal_balls || 0);
+    const totalWkts = parseInt(currentInnings.summary.wkts || currentInnings.summary.wickets || 0);
+    const totalRuns = parseInt(currentInnings.summary.runs || 0);
+    const target = parseInt(currentInnings.target || 0);
+
+    const isInnComplete = (maxBalls > 0 && legal >= maxBalls) || (wicketsLimit > 0 && totalWkts >= wicketsLimit);
+    const isMatchEnded = (currentInnings.innings_no == 2) && ((target > 0 && totalRuns >= target) || isInnComplete);
+
+    if (currentInnings.innings_no == 1 && isInnComplete && !currentInnings.completed) {
+        showInningsCompleteModal();
+        return;
+    }
+
+    if (currentInnings.innings_no == 2 && isMatchEnded && matchData.match.status !== 'completed' && matchData.match.status !== 'awaiting_super_over') {
+        showMatchEndedModal();
+        return;
+    }
+
+    if(!isInnComplete && legal > 0 && legal % 6 === 0 && last.is_legal == 1) { 
         let temp = s; s = ns; ns = temp; b = ''; 
         if(!currentInnings.completed) showBowlerModal(bowlPlayers, last.bowler_id); 
     }
@@ -1107,9 +1159,105 @@ function makeFD(runs, exRuns, exType, wType) {
     return fd; 
 }
 
-async function postBall(fd) { await fetch('../api/ball_add.php', {method:'POST', body:fd}); refresh(); }
+async function postBall(fd) { 
+    try {
+        const response = await fetch('../api/ball_add.php', {method:'POST', body:fd}); 
+        const res = await response.json();
+        if (res && (res.success || res.ok)) {
+            if (res.is_innings_complete && currentInnings && currentInnings.innings_no === 1 && !currentInnings.completed) {
+                await refresh();
+                showInningsCompleteModal(res);
+                return;
+            } else if (res.is_match_ended && currentInnings && currentInnings.innings_no === 2) {
+                await showMatchEndedModal();
+                return;
+            }
+        }
+        await refresh();
+    } catch(e) {
+        console.error("Ball post failed:", e);
+        await refresh();
+    }
+}
+
+function showInningsCompleteModal(ballRes) {
+    if (!currentInnings) return;
+    const runs = currentInnings.summary.runs;
+    const wkts = currentInnings.summary.wkts;
+    const oversText = currentInnings.summary.overs_text;
+    const target = runs + 1;
+    const battingTeam = currentInnings.batting_team;
+    const bowlingTeam = (currentInnings.batting_team_id == matchData.match.team_a_id) ? matchData.match.team_b : matchData.match.team_a;
+
+    const modal = document.getElementById('modal-innings-complete');
+    if (modal) {
+        const batEl = document.getElementById('inn-complete-bat-team');
+        const scoreEl = document.getElementById('inn-complete-score');
+        const targetEl = document.getElementById('inn-complete-target-text');
+        if (batEl) batEl.innerText = battingTeam;
+        if (scoreEl) scoreEl.innerText = `${runs}/${wkts} (${oversText} Ov)`;
+        if (targetEl) targetEl.innerText = `Target for ${bowlingTeam}: ${target} Runs`;
+        modal.style.display = 'flex';
+    }
+}
+
+async function confirmStartInnings2() {
+    if (!currentInnings) return;
+    const modal = document.getElementById('modal-innings-complete');
+    if (modal) modal.style.display = 'none';
+    try {
+        const res = await fetch('../api/innings_complete.php', {
+            method: 'POST',
+            body: new URLSearchParams({ innings_id: currentInnings.id })
+        });
+        const data = await res.json();
+        manualInningsId = null;
+        lastProcessedBallId = null;
+        await refresh();
+    } catch(e) {
+        console.error('Error completing innings:', e);
+        await refresh();
+    }
+}
+
+async function showMatchEndedModal() {
+    if (!currentInnings) return;
+    try {
+        const res = await fetch('../api/innings_complete.php', {
+            method: 'POST',
+            body: new URLSearchParams({ innings_id: currentInnings.id })
+        });
+        const data = await res.json();
+        const modal = document.getElementById('modal-match-ended');
+        if (modal) {
+            let winText = "Match Completed!";
+            if (data.next === 'tie') winText = "Match Tied! Super Over available.";
+            else if (data.winner_team_id) {
+                const wTeam = (data.winner_team_id == matchData.match.team_a_id) ? matchData.match.team_a : matchData.match.team_b;
+                winText = `🎉 ${wTeam} Won the Match!`;
+            }
+            const sumEl = document.getElementById('match-ended-summary');
+            if (sumEl) sumEl.innerText = winText;
+            modal.style.display = 'flex';
+        }
+        manualInningsId = null;
+        lastProcessedBallId = null;
+        await refresh();
+    } catch(e) {
+        console.error('Error finalizing match:', e);
+        await refresh();
+    }
+}
+
 async function undoBall() { await fetch('../api/ball_undo.php', {method:'POST', body:new URLSearchParams({innings_id:currentInnings.id})}); refresh(); }
-async function endInnings() { if(confirm('End this Innings?')) { await fetch('../api/innings_complete.php', {method:'POST', body:new URLSearchParams({innings_id:currentInnings.id})}); refresh(); } }
+async function endInnings() { 
+    if(confirm('End this Innings?')) { 
+        await fetch('../api/innings_complete.php', {method:'POST', body:new URLSearchParams({innings_id:currentInnings.id})}); 
+        manualInningsId = null;
+        lastProcessedBallId = null;
+        refresh(); 
+    } 
+}
 async function doLogout(){ await fetch('../api/logout.php',{method:'POST'}); location.href='../index.php'; }
 
 function openEditBall(id, runs, exType, exRuns, wType) {

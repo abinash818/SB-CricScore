@@ -8,6 +8,8 @@
 // POST /api/team_ops.php?action=clone
 
 header('Content-Type: application/json');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Headers: Content-Type, Authorization');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
@@ -16,6 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
 
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/app_auth.php';
+require_once __DIR__ . '/team_helpers.php';
 
 $action = $_GET['action'] ?? ($_POST['action'] ?? 'list');
 
@@ -49,82 +52,6 @@ if ($action === 'list') {
 
     echo json_encode(['success' => true, 'teams' => $teams]);
     exit;
-}
-
-// Helper function to resolve current user role and permissions for a team
-function get_team_user_role(PDO $pdo, int $teamId, ?array $currentUser): array {
-    if (!$currentUser || empty($currentUser['id'])) {
-        return [
-            'is_owner'          => false,
-            'is_leader'         => false,
-            'is_co_leader'      => false,
-            'is_member'         => false,
-            'can_manage_team'   => false,
-            'can_manage_roles'  => false,
-            'can_add_players'   => false,
-            'can_remove_players'=> false,
-            'viewer_role'       => 'guest'
-        ];
-    }
-
-    $tStmt = $pdo->prepare("SELECT owner_id FROM teams WHERE id = ?");
-    $tStmt->execute([$teamId]);
-    $ownerId = (int)$tStmt->fetchColumn();
-
-    $isOwner = (!empty($ownerId) && (int)$currentUser['id'] === $ownerId);
-
-    $userMobile = $currentUser['mobile'] ?? ($currentUser['phone'] ?? '');
-    $cleanMobile = preg_replace('/\D+/', '', $userMobile);
-    $last10 = (strlen($cleanMobile) >= 10) ? substr($cleanMobile, -10) : $cleanMobile;
-
-    $userName = trim($currentUser['name'] ?? '');
-
-    $isLeader = $isOwner;
-    $isCoLeader = false;
-    $isMember = false;
-
-    $pRow = null;
-    if (!empty($last10) && strlen($last10) >= 7) {
-        $pStmt = $pdo->prepare("SELECT id, name, is_captain, team_role FROM players WHERE team_id = ? AND (mobile = ? OR mobile = ? OR mobile = ? OR mobile LIKE ?) LIMIT 1");
-        $pStmt->execute([$teamId, $userMobile, '+91' . $last10, $last10, '%' . $last10]);
-        $pRow = $pStmt->fetch(PDO::FETCH_ASSOC);
-    }
-    if (!$pRow && !empty($userName) && strlen($userName) >= 2) {
-        $pStmt = $pdo->prepare("SELECT id, name, is_captain, team_role FROM players WHERE team_id = ? AND LOWER(TRIM(name)) = ? LIMIT 1");
-        $pStmt->execute([$teamId, strtolower($userName)]);
-        $pRow = $pStmt->fetch(PDO::FETCH_ASSOC);
-    }
-
-    if ($pRow) {
-        $isMember = true;
-        $r = strtolower($pRow['team_role'] ?? '');
-        if ($r === 'leader' || (int)$pRow['is_captain'] === 1) {
-            $isLeader = true;
-        } else if ($r === 'co_leader') {
-            $isCoLeader = true;
-        }
-    }
-
-    // Auto-heal: If team has no owner assigned and user is the captain/leader, assign them as owner
-    if (empty($ownerId) && $isLeader && !empty($currentUser['id'])) {
-        $pdo->prepare("UPDATE teams SET owner_id = ? WHERE id = ?")->execute([(int)$currentUser['id'], $teamId]);
-        $isOwner = true;
-    }
-
-    $canManageRoles = ($isLeader || $isOwner);
-    $canManageTeam  = ($isLeader || $isCoLeader || $isOwner);
-
-    return [
-        'is_owner'          => $isOwner,
-        'is_leader'         => $isLeader,
-        'is_co_leader'      => $isCoLeader,
-        'is_member'         => $isMember,
-        'can_manage_team'   => $canManageTeam,
-        'can_manage_roles'  => $canManageRoles,
-        'can_add_players'   => $canManageTeam,
-        'can_remove_players'=> $canManageTeam,
-        'viewer_role'       => $isLeader ? 'leader' : ($isCoLeader ? 'co_leader' : ($isMember ? 'member' : ($isOwner ? 'owner' : 'guest')))
-    ];
 }
 
 // ── 2. GET TEAM DETAILS & SQUAD ──────────────────────────────────────────────
@@ -165,6 +92,31 @@ if ($action === 'get') {
     $pStmt = $pdo->prepare("SELECT * FROM players WHERE team_id = ? ORDER BY is_captain DESC, (team_role = 'leader') DESC, (team_role = 'co_leader') DESC, id ASC");
     $pStmt->execute([$teamId]);
     $players = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // If squad is currently empty and team has an owner, automatically register owner as Leader / Captain
+    if (empty($players) && !empty($team['owner_id'])) {
+        try {
+            $uStmt = $pdo->prepare("SELECT * FROM app_users WHERE id = ?");
+            $uStmt->execute([$team['owner_id']]);
+            $uRow = $uStmt->fetch(PDO::FETCH_ASSOC);
+            if ($uRow) {
+                $cName = !empty($uRow['name']) ? $uRow['name'] : (!empty($uRow['username']) ? $uRow['username'] : 'Team Captain');
+                $cMob  = !empty($uRow['phone']) ? $uRow['phone'] : (!empty($uRow['mobile']) ? $uRow['mobile'] : '');
+                $cPic  = !empty($uRow['profile_pic']) ? $uRow['profile_pic'] : null;
+
+                $insCapt = $pdo->prepare("
+                    INSERT INTO players (team_id, name, role, jersey_number, is_captain, team_role, mobile, batting_style, bowling_style, profile_pic)
+                    VALUES (?, ?, 'All-Rounder', '7', 1, 'leader', ?, 'Right Hand Bat', 'Right Arm Medium', ?)
+                ");
+                $insCapt->execute([$teamId, $cName, $cMob, $cPic]);
+
+                // Reload squad
+                $pStmt->execute([$teamId]);
+                $players = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+                $permissions = get_team_user_role($pdo, $teamId, $currentUser);
+            }
+        } catch (Throwable $e) {}
+    }
 
     $hasLeaderAlready = false;
     $sanitizedPlayers = [];
@@ -221,9 +173,25 @@ if ($action === 'create') {
         }
     }
 
-    $stmt = $pdo->prepare("INSERT INTO teams (tournament_id, name, short_name, icon) VALUES (?, ?, ?, ?)");
-    $stmt->execute([$tid, $name, $shortName, $icon]);
+    $currentUser = app_optional_auth($pdo);
+    $ownerId = ($currentUser && !empty($currentUser['id'])) ? (int)$currentUser['id'] : null;
+
+    $stmt = $pdo->prepare("INSERT INTO teams (tournament_id, name, short_name, icon, owner_id) VALUES (?, ?, ?, ?, ?)");
+    $stmt->execute([$tid, $name, $shortName, $icon, $ownerId]);
     $teamId = (int)$pdo->lastInsertId();
+
+    // Auto-add creator as captain if user info is available
+    if ($currentUser) {
+        $captName = $currentUser['name'] ?? ($currentUser['username'] ?? 'Team Captain');
+        $captMob  = $currentUser['phone'] ?? ($currentUser['mobile'] ?? '');
+        try {
+            $pStmt = $pdo->prepare("
+                INSERT INTO players (team_id, name, role, jersey_number, is_captain, team_role, mobile, batting_style, bowling_style, profile_pic)
+                VALUES (?, ?, 'All-Rounder', '7', 1, 'leader', ?, 'Right Hand Bat', 'Right Arm Medium', ?)
+            ");
+            $pStmt->execute([$teamId, $captName, $captMob, $currentUser['profile_pic'] ?? null]);
+        } catch (Throwable $e) {}
+    }
 
     echo json_encode([
         'success'   => true,
@@ -418,24 +386,26 @@ if ($action === 'create_user_team') {
         $stmt->execute([$tournId, $name, $shortName, $city, $icon, ($ownerId > 0 ? $ownerId : null)]);
         $teamId = (int)$pdo->lastInsertId();
 
-        // Automatically add Creator as Captain in Squad if enabled or creator info available
+        // Automatically add Creator as Captain & Leader in Squad if enabled
         $captainPlayerId = 0;
-        if ($addCaptain && (!empty($creatorName) || !empty($creatorMobile))) {
-            $captainName = !empty($creatorName) ? $creatorName : 'Team Captain';
+        if ($addCaptain) {
+            $captainName = !empty($creatorName) ? $creatorName : ($currentUser['name'] ?? ($currentUser['username'] ?? 'Team Captain'));
+            $captainMob  = !empty($creatorMobile) ? $creatorMobile : ($currentUser['phone'] ?? ($currentUser['mobile'] ?? ''));
+            $captainPic  = !empty($creatorPhoto) ? $creatorPhoto : ($currentUser['profile_pic'] ?? null);
             
             $pStmt = $pdo->prepare("
-                INSERT INTO players (team_id, name, role, jersey_number, is_captain, mobile, batting_style, bowling_style, profile_pic)
-                VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
+                INSERT INTO players (team_id, name, role, jersey_number, is_captain, team_role, mobile, batting_style, bowling_style, profile_pic)
+                VALUES (?, ?, ?, ?, 1, 'leader', ?, ?, ?, ?)
             ");
             $pStmt->execute([
                 $teamId,
                 $captainName,
                 $creatorRole,
-                $creatorJersey,
-                $creatorMobile,
+                ($creatorJersey ?: '7'),
+                $captainMob,
                 $creatorBatStyle,
                 $creatorBowlStyle,
-                !empty($creatorPhoto) ? $creatorPhoto : null
+                $captainPic
             ]);
             $captainPlayerId = (int)$pdo->lastInsertId();
         }

@@ -11,3 +11,4 @@ mobile_app/android/.gradle/
 api/fcm_credentials.json
 *.jks
 *.keystore
+scratch/

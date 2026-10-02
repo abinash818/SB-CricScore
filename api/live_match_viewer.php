@@ -40,10 +40,15 @@ $teamBStmt = $pdo->prepare("SELECT id, name, short_name, icon FROM teams WHERE i
 $teamBStmt->execute([(int)$m['team_b_id']]);
 $teamB = $teamBStmt->fetch() ?: ['id' => $m['team_b_id'], 'name' => 'Team B', 'short_name' => 'TMB'];
 
-// 2. Fetch Active Innings
-$innStmt = $pdo->prepare("SELECT * FROM innings WHERE match_id = ? ORDER BY innings_no DESC LIMIT 1");
+// 2. Fetch Active Innings: prioritize current uncompleted innings (lowest innings_no), or latest completed
+$innStmt = $pdo->prepare("SELECT * FROM innings WHERE match_id = ? AND completed = 0 ORDER BY innings_no ASC LIMIT 1");
 $innStmt->execute([$match_id]);
 $inn = $innStmt->fetch();
+if (!$inn) {
+    $innStmt = $pdo->prepare("SELECT * FROM innings WHERE match_id = ? ORDER BY innings_no DESC LIMIT 1");
+    $innStmt->execute([$match_id]);
+    $inn = $innStmt->fetch();
+}
 
 $runs = 0;
 $wickets = 0;

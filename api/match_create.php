@@ -185,13 +185,9 @@ try {
 
     if ($bat_first > 0 && $team_b > 0) {
         $bowling = ($bat_first == $team_a ? $team_b : $team_a);
-        // Create Innings 1
+        // Create Innings 1 only
         $i1 = $pdo->prepare("INSERT INTO innings (match_id, innings_no, batting_team_id, bowling_team_id, completed) VALUES (?, 1, ?, ?, 0)");
         $i1->execute([$match_id, $bat_first, $bowling]);
-
-        // Create Innings 2
-        $i2 = $pdo->prepare("INSERT INTO innings (match_id, innings_no, batting_team_id, bowling_team_id, completed) VALUES (?, 2, ?, ?, 0)");
-        $i2->execute([$match_id, $bowling, $bat_first]);
     }
 
     if ($pdo->inTransaction()) {

@@ -131,7 +131,12 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
         dynamic targetInn;
         if (inningsList.isNotEmpty) {
           final matches = inningsList.where((i) => int.tryParse(i['id']?.toString() ?? '') == _currentInningsId);
-          targetInn = matches.isNotEmpty ? matches.first : inningsList.last;
+          if (matches.isNotEmpty) {
+            targetInn = matches.first;
+          } else {
+            final uncompleted = inningsList.where((i) => (i['completed'] == 0 || i['completed'] == false || i['completed'] == '0'));
+            targetInn = uncompleted.isNotEmpty ? uncompleted.first : inningsList.first;
+          }
         }
 
         if (targetInn != null) {
@@ -141,11 +146,20 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
           final int batId = int.tryParse(targetInn['batting_team_id']?.toString() ?? '0') ?? _currentBattingTeamId;
           final String batName = targetInn['batting_team']?.toString() ?? _currentBattingTeamName;
 
+          final int hostId = int.tryParse(res.data['match']?['team_a_id']?.toString() ?? '') ?? 0;
+          final int oppId = int.tryParse(res.data['match']?['team_b_id']?.toString() ?? '') ?? 0;
+          final String hostName = res.data['match']?['team_a']?.toString() ?? widget.battingTeamName;
+          final String oppName = res.data['match']?['team_b']?.toString() ?? widget.bowlingTeamName;
+          final int bowlId = (batId == hostId) ? oppId : hostId;
+          final String bowlName = (batId == hostId) ? oppName : hostName;
+
           setState(() {
             _currentInningsId = int.tryParse(targetInn['id']?.toString() ?? '') ?? _currentInningsId;
             _currentInningsNo = innNo;
             _currentBattingTeamId = batId;
             _currentBattingTeamName = batName;
+            _currentBowlingTeamId = bowlId;
+            _currentBowlingTeamName = bowlName;
             _totalRuns = int.tryParse(summary['runs']?.toString() ?? '0') ?? 0;
             _totalWickets = int.tryParse(summary['wickets']?.toString() ?? '0') ?? 0;
             _legalBalls = int.tryParse(summary['legal_balls']?.toString() ?? '0') ?? 0;
@@ -342,24 +356,46 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
 
           // ── Over Complete Handling ──
           final bool isOverFinished = isLegal && (_legalBalls > 0 && _legalBalls % 6 == 0);
+          final List<String> completedOverBalls = isOverFinished ? List<String>.from(_thisOver) : [];
+          final String completedBowlerName = _bowlerName;
+          final int completedOverNo = (_legalBalls / 6).floor();
+
           if (isOverFinished) {
             _lastBowlerId = _bowlerId;
             _thisOver.clear();
             _swapStrike(); // Rotate strike at end of over
           }
 
-          // Check if Innings / Match Completed
+          // Check if Innings / Match Completed (All-Out / Overs Finished / Target Reached)
           final int overs = res.data['overs_limit'] != null
               ? (int.tryParse(res.data['overs_limit'].toString()) ?? widget.oversLimit)
               : widget.oversLimit;
           final int matchMaxBalls = (overs > 0 ? overs : 20) * 6;
-          final bool isInnComplete = (_legalBalls >= matchMaxBalls && matchMaxBalls > 0) ||
-              (_totalWickets >= 10);
+          final int defaultWickets = _battingSquad.isNotEmpty ? (_battingSquad.length - 1) : 10;
+          final int wicketsLimit = res.data['wickets_limit'] != null
+              ? (int.tryParse(res.data['wickets_limit'].toString()) ?? defaultWickets)
+              : defaultWickets;
+
+          if (isWicket && outPlayerId != null) {
+            _dismissedPlayerIds.add(outPlayerId);
+          }
+
+          final remainingBatsmenCount = _battingSquad.where((p) {
+            final pid = int.parse(p['id'].toString());
+            return !_dismissedPlayerIds.contains(pid) && pid != _strikerId && pid != _nonStrikerId;
+          }).length;
+
+          final bool isAllOut = _totalWickets >= wicketsLimit || (isWicket && remainingBatsmenCount == 0);
+
+          final bool isInnComplete = (res.data['is_innings_complete'] == true) ||
+              (_legalBalls >= matchMaxBalls && matchMaxBalls > 0) ||
+              isAllOut;
+
           final bool isMatchOver = (res.data['is_match_ended'] == true && _currentInningsNo == 2) ||
               (_currentInningsNo == 2 &&
                   ((_targetRuns != null && _totalRuns >= _targetRuns!) ||
                       (_legalBalls >= matchMaxBalls && matchMaxBalls > 0) ||
-                      _totalWickets >= 10));
+                      isAllOut));
 
           if (_currentInningsNo == 1 && isInnComplete && !_isInningsBreakOpen) {
             _isInningsBreakOpen = true;
@@ -367,13 +403,22 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
           } else if (_currentInningsNo == 2 && isMatchOver && !_isMatchEndedOpen) {
             _isMatchEndedOpen = true;
             _showMatchEndedModal();
-          } else if (isWicket) {
-            // Wicket Fall -> Prompt Next Batsman
-            if (outPlayerId != null) _dismissedPlayerIds.add(outPlayerId);
-            _showSelectNewBatsmanSheet(isNonStrikerOut: outIsNonStriker);
+          } else if (isWicket && !isInnComplete) {
+            // Wicket Fall (Not All-Out) -> Prompt Next Batsman
+            _showSelectNewBatsmanSheet(
+              isNonStrikerOut: outIsNonStriker,
+              isOverFinishedAfterThis: isOverFinished && !isInnComplete,
+              completedOverBalls: completedOverBalls,
+              completedBowlerName: completedBowlerName,
+              completedOverNo: completedOverNo,
+            );
           } else if (isOverFinished && !isInnComplete) {
-            // Over Complete -> Prompt ONLY Next Bowler
-            _showSelectNextBowlerSheet();
+            // Over Complete -> Prompt Next Bowler with Over breakdown
+            _showSelectNextBowlerSheet(
+              overBalls: completedOverBalls,
+              completedBowlerName: completedBowlerName,
+              completedOverNo: completedOverNo,
+            );
           }
         }
       }
@@ -854,8 +899,66 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
     );
   }
 
-  // ── SELECT NEXT BOWLER MODAL ──
-  void _showSelectNextBowlerSheet() {
+  Widget _buildSummaryBallPill(String event) {
+    Color bg = const Color(0xFF1E1E38);
+    Color fg = Colors.white;
+    Color border = Colors.white24;
+
+    if (event == '4') {
+      bg = const Color(0xFF00E676).withOpacity(0.2);
+      fg = const Color(0xFF00E676);
+      border = const Color(0xFF00E676);
+    } else if (event == '6') {
+      bg = const Color(0xFF9C27B0).withOpacity(0.25);
+      fg = const Color(0xFFE040FB);
+      border = const Color(0xFFE040FB);
+    } else if (event.contains('W') && !event.contains('Wd')) {
+      bg = AppTheme.errorRed.withOpacity(0.25);
+      fg = AppTheme.errorRed;
+      border = AppTheme.errorRed;
+    } else if (event.contains('Wd') || event.contains('NB') || event.contains('B') || event.contains('Lb')) {
+      bg = Colors.amber.withOpacity(0.2);
+      fg = Colors.amberAccent;
+      border = Colors.amber;
+    } else if (event == '0' || event == '•') {
+      bg = Colors.white.withOpacity(0.05);
+      fg = Colors.white60;
+      border = Colors.white12;
+    }
+
+    return Container(
+      width: 36,
+      height: 36,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: bg,
+        shape: BoxShape.circle,
+        border: Border.all(color: border, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: bg.withOpacity(0.3),
+            blurRadius: 4,
+            spreadRadius: 1,
+          )
+        ],
+      ),
+      child: Text(
+        event,
+        style: GoogleFonts.outfit(
+          color: fg,
+          fontWeight: FontWeight.bold,
+          fontSize: event.length > 2 ? 10 : 13,
+        ),
+      ),
+    );
+  }
+
+  // ── SELECT NEXT BOWLER MODAL WITH OVER BREAKDOWN ──
+  void _showSelectNextBowlerSheet({
+    List<String>? overBalls,
+    String? completedBowlerName,
+    int? completedOverNo,
+  }) {
     int? nextBowlerId;
 
     showModalBottomSheet(
@@ -884,12 +987,59 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  'Current Bowler was $_bowlerName (Cannot bowl consecutive overs).',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                const SizedBox(height: 12),
+
+                // ── OVER BREAKDOWN SUMMARY CARD ──
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF131326),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppTheme.primaryGold.withOpacity(0.25)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            completedOverNo != null ? 'OVER $completedOverNo RECAP' : 'LAST OVER RECAP',
+                            style: GoogleFonts.outfit(
+                              color: AppTheme.primaryGold,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                          Text(
+                            'Score: $_totalRuns/$_totalWickets (${floorOvers(_legalBalls)} ov)',
+                            style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                      if (overBalls != null && overBalls.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: overBalls.map((b) => Padding(
+                              padding: const EdgeInsets.only(right: 8.0),
+                              child: _buildSummaryBallPill(b),
+                            )).toList(),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Text(
+                        'Bowled by: ${completedBowlerName ?? _bowlerName} (Cannot bowl consecutive overs)',
+                        style: const TextStyle(color: AppTheme.textMuted, fontSize: 11, fontStyle: FontStyle.italic),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 16),
 
                 DropdownButtonFormField<int>(
                   isExpanded: true,
@@ -938,7 +1088,10 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
                         _bowlerWickets = 0;
                       });
                     },
-                    child: const Text('START NEXT OVER ⚾', style: TextStyle(fontWeight: FontWeight.bold)),
+                    child: Text(
+                      completedOverNo != null ? 'START OVER ${completedOverNo + 1} 🚀' : 'START NEXT OVER ⚾',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ),
               ],
@@ -950,7 +1103,13 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
   }
 
   // ── SELECT NEW BATSMAN ON WICKET FALL ──
-  void _showSelectNewBatsmanSheet({bool isNonStrikerOut = false}) {
+  void _showSelectNewBatsmanSheet({
+    bool isNonStrikerOut = false,
+    bool isOverFinishedAfterThis = false,
+    List<String>? completedOverBalls,
+    String? completedBowlerName,
+    int? completedOverNo,
+  }) {
     int? newBatterId;
     bool isNewBatterOnStrike = !isNonStrikerOut;
 
@@ -1075,6 +1234,16 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
                           if (!isNewBatterOnStrike) _swapStrike();
                         }
                       });
+
+                      if (isOverFinishedAfterThis) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          _showSelectNextBowlerSheet(
+                            overBalls: completedOverBalls,
+                            completedBowlerName: completedBowlerName,
+                            completedOverNo: completedOverNo,
+                          );
+                        });
+                      }
                     },
                     child: const Text('CONFIRM BATSMAN & RESUME ▶️', style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
@@ -1463,6 +1632,16 @@ class _LiveScorerConsoleScreenState extends State<LiveScorerConsoleScreen> {
   }
 
   void _showMatchEndedModal() {
+    // Proactively inform backend that Innings 2 is completed & finalize match status
+    () async {
+      try {
+        await _apiService.dio.post('/innings_complete.php', data: {
+          'innings_id': _currentInningsId,
+          'match_id': widget.matchId,
+        });
+      } catch (_) {}
+    }();
+
     showDialog(
       context: context,
       barrierDismissible: false,

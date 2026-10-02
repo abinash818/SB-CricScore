@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/api_service.dart';
 import '../../core/theme.dart';
+import '../main_navigation_screen.dart';
 import 'toss_screen.dart';
 import 'live_scorer_console_screen.dart';
 
@@ -10,6 +11,8 @@ class PlayingXiSelectorScreen extends StatefulWidget {
   final int teamId;
   final String teamName;
   final bool openTossOnSave;
+  final bool returnToHomeOnSave;
+  final bool isHost;
   final VoidCallback? onSaved;
 
   const PlayingXiSelectorScreen({
@@ -18,6 +21,8 @@ class PlayingXiSelectorScreen extends StatefulWidget {
     required this.teamId,
     required this.teamName,
     this.openTossOnSave = false,
+    this.returnToHomeOnSave = false,
+    this.isHost = false,
     this.onSaved,
   });
 
@@ -139,17 +144,50 @@ class _PlayingXiSelectorScreenState extends State<PlayingXiSelectorScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(res['message'] ?? 'Lineup saved successfully! 🏏'),
+              content: Text(res['message'] ?? (widget.returnToHomeOnSave
+                  ? 'Playing 11 submitted! Host will start Toss & Scoring 🏏'
+                  : 'Lineup saved successfully! 🏏')),
               backgroundColor: Colors.green,
             ),
           );
         }
         widget.onSaved?.call();
 
+        if (widget.returnToHomeOnSave || (!widget.isHost && !widget.openTossOnSave)) {
+          if (mounted) {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
+              (route) => false,
+            );
+          }
+          return;
+        }
+
         if (widget.openTossOnSave || autoProceed) {
-          await _proceedToMatch();
+          if (widget.isHost) {
+            await _proceedToMatch();
+          } else {
+            if (mounted) {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
+                (route) => false,
+              );
+            }
+          }
         } else {
-          if (mounted) Navigator.pop(context, true);
+          if (mounted) {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context, true);
+            } else {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
+                (route) => false,
+              );
+            }
+          }
         }
       } else {
         if (mounted) {
@@ -502,12 +540,16 @@ class _PlayingXiSelectorScreenState extends State<PlayingXiSelectorScreen> {
             ),
             icon: _saving
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF070710)))
-                : const Icon(Icons.sports_cricket, size: 20, color: Color(0xFF070710)),
+                : Icon(widget.isHost ? Icons.sports_cricket : Icons.check_circle, size: 20, color: const Color(0xFF070710)),
             label: Text(
-              _saving ? 'Saving Lineup...' : 'SAVE & GO TO TOSS / MATCH 🪙',
+              _saving
+                  ? 'Saving Lineup...'
+                  : (widget.returnToHomeOnSave || !widget.isHost
+                      ? 'SUBMIT PLAYING XI & FINISH ✅'
+                      : 'SAVE & GO TO TOSS / MATCH 🪙'),
               style: GoogleFonts.outfit(fontWeight: FontWeight.bold, fontSize: 15),
             ),
-            onPressed: _saving ? null : () => _saveLineup(autoProceed: true),
+            onPressed: _saving ? null : () => _saveLineup(autoProceed: widget.isHost),
           ),
         ),
       ),

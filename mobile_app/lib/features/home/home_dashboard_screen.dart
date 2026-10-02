@@ -367,8 +367,11 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                             style: GoogleFonts.outfit(color: AppTheme.textMuted, fontSize: 12),
                           ),
                           const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                          Wrap(
+                            alignment: WrapAlignment.center,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 8,
+                            runSpacing: 8,
                             children: [
                               TextButton.icon(
                                 style: TextButton.styleFrom(foregroundColor: AppTheme.primaryGold),
@@ -376,7 +379,6 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                                 label: Text('View $currentDist Matches'),
                                 onPressed: () => _setFilter('district'),
                               ),
-                              const SizedBox(width: 8),
                               ElevatedButton(
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppTheme.primaryGold,
@@ -598,16 +600,22 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     final scores = match['scores'] as List? ?? [];
     final locationText = match['district'] ?? match['venue_name'] ?? 'Turf';
 
-    String scoreTextA = '0/0';
-    String scoreTextB = '0/0';
+    final int teamAId = int.tryParse(teamA['id']?.toString() ?? '') ?? 0;
+    final int teamBId = int.tryParse(teamB['id']?.toString() ?? '') ?? 0;
 
-    if (scores.isNotEmpty) {
-      final s1 = scores[0];
-      scoreTextA = "${s1['runs']}/${s1['wickets']} (${s1['overs']} ov)";
-    }
-    if (scores.length > 1) {
-      final s2 = scores[1];
-      scoreTextB = "${s2['runs']}/${s2['wickets']} (${s2['overs']} ov)";
+    String scoreTextA = match['score_team_a']?.toString() ?? '';
+    String scoreTextB = match['score_team_b']?.toString() ?? '';
+
+    if (scoreTextA.isEmpty || scoreTextB.isEmpty) {
+      for (var s in scores) {
+        final int batId = int.tryParse(s['batting_team_id']?.toString() ?? '') ?? 0;
+        final String formatted = "${s['runs'] ?? 0}/${s['wickets'] ?? 0} (${s['overs'] ?? '0.0'} ov)";
+        if (batId == teamAId && scoreTextA.isEmpty) {
+          scoreTextA = formatted;
+        } else if (batId == teamBId && scoreTextB.isEmpty) {
+          scoreTextB = formatted;
+        }
+      }
     }
 
     return GestureDetector(
@@ -675,7 +683,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                   ),
                 ),
                 Text(
-                  scoreTextA,
+                  scoreTextA.isNotEmpty ? scoreTextA : '-',
                   style: GoogleFonts.outfit(fontSize: 13, color: AppTheme.primaryGold, fontWeight: FontWeight.bold),
                 ),
               ],
@@ -693,7 +701,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                   ),
                 ),
                 Text(
-                  scoreTextB,
+                  scoreTextB.isNotEmpty ? scoreTextB : '-',
                   style: GoogleFonts.outfit(fontSize: 13, color: AppTheme.primaryGold, fontWeight: FontWeight.bold),
                 ),
               ],

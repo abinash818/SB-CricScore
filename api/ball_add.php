@@ -11,6 +11,7 @@ header('Access-Control-Allow-Methods: POST, OPTIONS');
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(200); exit; }
 
 require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/app_auth.php';
 
 $input = json_decode(file_get_contents('php://input'), true) ?? $_POST;
@@ -116,7 +117,18 @@ $overs_limit   = (int)($inn['overs_limit_override'] ?: ($inn['match_overs'] ?: 2
 if ($overs_limit <= 0) $overs_limit = 20;
 $wickets_limit = (int)($inn['match_wickets'] ?: 10);
 if ($wickets_limit <= 0) $wickets_limit = 10;
-$max_balls     = $overs_limit * 6;
+
+// Dynamic all-out check if squad size is smaller than standard 11
+if (!empty($inn['batting_team_id'])) {
+    $sqStmt = $pdo->prepare("SELECT COUNT(*) FROM players WHERE team_id = ?");
+    $sqStmt->execute([$inn['batting_team_id']]);
+    $sqCount = (int)$sqStmt->fetchColumn();
+    if ($sqCount > 1 && ($sqCount - 1) < $wickets_limit) {
+        $wickets_limit = $sqCount - 1;
+    }
+}
+
+$max_balls = $overs_limit * 6;
 
 $is_innings_complete = false;
 $is_match_ended      = false;
@@ -130,6 +142,9 @@ if ((int)$inn['innings_no'] === 1) {
     if (($target > 0 && $total_runs >= $target) || $legal_balls >= $max_balls || $total_wkts >= $wickets_limit) {
         $is_innings_complete = true;
         $is_match_ended = true;
+        try {
+            complete_innings($pdo, $innings_id);
+        } catch (Throwable $e) {}
     }
 }
 
@@ -142,6 +157,7 @@ echo json_encode([
     'seq'                 => $next_seq,
     'totals'              => $totals,
     'overs_limit'         => $overs_limit,
+    'wickets_limit'       => $wickets_limit,
     'max_balls'           => $max_balls,
     'is_innings_complete' => $is_innings_complete,
     'is_match_ended'      => $is_match_ended,

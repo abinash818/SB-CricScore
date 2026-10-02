@@ -343,7 +343,9 @@ class _QrMatchScannerScreenState extends State<QrMatchScannerScreen> {
                                 matchId: matchId,
                                 teamId: chosenTeamId!,
                                 teamName: joinRes['team_b_name'] ?? 'My Team',
-                                openTossOnSave: true,
+                                openTossOnSave: false,
+                                returnToHomeOnSave: true,
+                                isHost: false,
                               ),
                             ),
                           );

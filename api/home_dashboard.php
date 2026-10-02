@@ -111,6 +111,17 @@ function formatMatchSummary(PDO $pdo, array $m): array {
         ];
     }
 
+    // Determine Scores specifically mapped to Team A and Team B
+    $scoreA = null;
+    $scoreB = null;
+    foreach ($scores as $sc) {
+        if ($sc['batting_team_id'] === (int)$teamA['id']) {
+            $scoreA = $sc;
+        } else if ($sc['batting_team_id'] === (int)$teamB['id']) {
+            $scoreB = $sc;
+        }
+    }
+
     // Determine Winner Name
     $winnerName = null;
     if (!empty($m['winner_team_id'])) {
@@ -129,6 +140,9 @@ function formatMatchSummary(PDO $pdo, array $m): array {
         'overs_limit'     => (int)$m['overs_limit'],
         'team_a'          => $teamA,
         'team_b'          => $teamB,
+        'score_team_a'    => $scoreA ? "{$scoreA['runs']}/{$scoreA['wickets']} ({$scoreA['overs']} ov)" : null,
+        'score_team_b'    => $scoreB ? "{$scoreB['runs']}/{$scoreB['wickets']} ({$scoreB['overs']} ov)" : null,
+        'scores'          => $scores,
         'toss_winner_id'  => $m['toss_winner_team_id'] ? (int)$m['toss_winner_team_id'] : null,
         'toss_decision'   => $m['toss_decision'] ?? null,
         'winner_id'       => $m['winner_team_id'] ? (int)$m['winner_team_id'] : null,
@@ -184,6 +198,79 @@ function getMatchesByFilter(PDO $pdo, string $statusClause, string $filter, stri
     }
     return $out;
 }
+
+// Auto-finalize finished or stale live matches (>6 hours or 2nd innings finished)
+try {
+    $staleLive = $pdo->query("
+        SELECT m.id, m.team_a_id, m.team_b_id, m.overs_limit,
+               i1.id as i1_id, i1.batting_team_id as i1_bat, i1.total_runs as i1_runs,
+               i2.id as i2_id, i2.batting_team_id as i2_bat, i2.total_runs as i2_runs, i2.target, i2.total_legal_balls as i2_balls, i2.completed as i2_comp,
+               TIMESTAMPDIFF(HOUR, m.created_at, NOW()) as hours_old
+        FROM matches m
+        LEFT JOIN innings i1 ON i1.match_id = m.id AND i1.innings_no = 1
+        LEFT JOIN innings i2 ON i2.match_id = m.id AND i2.innings_no = 2
+        WHERE m.status IN ('live', 'in_progress')
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($staleLive as $lm) {
+        $mid = (int)$lm['id'];
+        $oversLimitBalls = (int)$lm['overs_limit'] * 6;
+        $i2Target = (int)($lm['target'] ?? 0);
+        $i2Runs = (int)($lm['i2_runs'] ?? 0);
+        $i2Balls = (int)($lm['i2_balls'] ?? 0);
+        $i1Bat = (int)($lm['i1_bat'] ?? 0);
+        $i2Bat = (int)($lm['i2_bat'] ?? 0);
+        $hoursOld = (int)($lm['hours_old'] ?? 0);
+
+        $isDone = false;
+        $winnerId = null;
+        $resType = null;
+
+        if ($lm['i2_id']) {
+            if ($i2Target > 0 && $i2Runs >= $i2Target) {
+                $isDone = true;
+                $winnerId = $i2Bat;
+                $resType = ($winnerId === (int)$lm['team_a_id']) ? 'A' : 'B';
+            } else if ($lm['i2_comp'] == 1 || ($oversLimitBalls > 0 && $i2Balls >= $oversLimitBalls)) {
+                $isDone = true;
+                if ($i2Runs >= $i2Target && $i2Target > 0) {
+                    $winnerId = $i2Bat;
+                    $resType = ($winnerId === (int)$lm['team_a_id']) ? 'A' : 'B';
+                } else if ($i2Target > 0 && $i2Runs === ($i2Target - 1)) {
+                    $winnerId = null;
+                    $resType = 'tie';
+                } else {
+                    $winnerId = $i1Bat;
+                    $resType = ($winnerId === (int)$lm['team_a_id']) ? 'A' : 'B';
+                }
+            }
+        }
+
+        // If match is older than 6 hours and inactive, mark completed
+        if (!$isDone && $hoursOld >= 6) {
+            $isDone = true;
+            if ($lm['i2_id'] && $i2Target > 0) {
+                if ($i2Runs >= $i2Target) {
+                    $winnerId = $i2Bat;
+                    $resType = ($winnerId === (int)$lm['team_a_id']) ? 'A' : 'B';
+                } else {
+                    $winnerId = $i1Bat;
+                    $resType = ($winnerId === (int)$lm['team_a_id']) ? 'A' : 'B';
+                }
+            }
+        }
+
+        if ($isDone) {
+            $pdo->prepare("UPDATE matches SET status = 'completed', winner_team_id = ?, result_type = ? WHERE id = ?")->execute([$winnerId, $resType, $mid]);
+            if ($lm['i2_id']) {
+                $pdo->prepare("UPDATE innings SET completed = 1 WHERE id = ?")->execute([(int)$lm['i2_id']]);
+            }
+            if ($lm['i1_id']) {
+                $pdo->prepare("UPDATE innings SET completed = 1 WHERE id = ?")->execute([(int)$lm['i1_id']]);
+            }
+        }
+    }
+} catch (Throwable $e) {}
 
 // 1. Live Matches
 $liveMatches = getMatchesByFilter($pdo, "status IN ('live', 'in_progress')", $filter, $district, $state, $myTeamIds, $cleanPhone, 10);

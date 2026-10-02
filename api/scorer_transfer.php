@@ -66,9 +66,14 @@ try {
 
     // ── ACTION: GET STATUS ───────────────────────────────────────────────────
     if ($action === 'status' || $action === 'get_status') {
-        $innStmt = $pdo->prepare("SELECT * FROM innings WHERE match_id = ? ORDER BY innings_no DESC LIMIT 1");
+        $innStmt = $pdo->prepare("SELECT * FROM innings WHERE match_id = ? AND completed = 0 ORDER BY innings_no ASC LIMIT 1");
         $innStmt->execute([$matchId]);
         $activeInn = $innStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$activeInn) {
+            $innStmt = $pdo->prepare("SELECT * FROM innings WHERE match_id = ? ORDER BY innings_no DESC LIMIT 1");
+            $innStmt->execute([$matchId]);
+            $activeInn = $innStmt->fetch(PDO::FETCH_ASSOC);
+        }
 
         $scorerPid = (int)($match['active_scorer_player_id'] ?? ($activeInn['scorer_player_id'] ?? 0));
         $scorerName = $match['active_scorer_name'] ?? ($activeInn['scorer_name'] ?? 'Scorekeeper');
@@ -125,9 +130,14 @@ try {
         ]);
 
         // 2. Update current active innings table
-        $innStmt = $pdo->prepare("SELECT id FROM innings WHERE match_id = ? ORDER BY innings_no DESC LIMIT 1");
+        $innStmt = $pdo->prepare("SELECT id FROM innings WHERE match_id = ? AND completed = 0 ORDER BY innings_no ASC LIMIT 1");
         $innStmt->execute([$matchId]);
         $currInnId = (int)$innStmt->fetchColumn();
+        if (!$currInnId) {
+            $innStmt = $pdo->prepare("SELECT id FROM innings WHERE match_id = ? ORDER BY innings_no DESC LIMIT 1");
+            $innStmt->execute([$matchId]);
+            $currInnId = (int)$innStmt->fetchColumn();
+        }
 
         if ($currInnId > 0) {
             $pdo->prepare("

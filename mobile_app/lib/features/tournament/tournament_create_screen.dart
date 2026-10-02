@@ -147,17 +147,24 @@ class _TournamentCreateScreenState extends State<TournamentCreateScreen> {
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
                     value: _formatType,
+                    isExpanded: true,
                     dropdownColor: cardBg,
                     style: const TextStyle(color: Colors.white),
                     decoration: _inputDecoration('Format Type'),
                     items: const [
                       DropdownMenuItem(
                         value: 'round_robin',
-                        child: Text('🔄 Round Robin (League Table + Knockouts)'),
+                        child: Text(
+                          '🔄 Round Robin (League + Knockout)',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                       DropdownMenuItem(
                         value: 'knockout',
-                        child: Text('⚡ Direct Knockout (Elimination)'),
+                        child: Text(
+                          '⚡ Direct Knockout (Elimination)',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ],
                     onChanged: (val) {

@@ -17,4 +17,22 @@ try {
     $results['toss_winner_modify'] = 'ERROR: ' . $e->getMessage();
 }
 
+try {
+    $updated = $pdo->exec("
+        UPDATE matches m
+        SET status = 'completed'
+        WHERE status IN ('live', 'in_progress')
+    ");
+    $results['cleaned_live_matches_count'] = $updated;
+} catch (Throwable $e) {
+    $results['cleaned_live_matches_error'] = $e->getMessage();
+}
+
+try {
+    $pdo->exec("UPDATE innings SET completed = 1 WHERE match_id IN (SELECT id FROM matches WHERE status = 'completed')");
+    $results['innings_completed_sync'] = 'SUCCESS';
+} catch (Throwable $e) {
+    $results['innings_completed_sync'] = $e->getMessage();
+}
+
 echo json_encode($results, JSON_PRETTY_PRINT);
